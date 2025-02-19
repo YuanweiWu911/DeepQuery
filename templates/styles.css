@@ -1,0 +1,7 @@
+/* styles.css */
+#result {
+    border: none;
+    border-width: 0;
+    width: 90%;
+    border-radius: 1px;
+}
