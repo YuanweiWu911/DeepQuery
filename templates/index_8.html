@@ -7,7 +7,7 @@
     <style>
         /* 保留之前的样式 */
         body { font-family: Arial, sans-serif; 
-               fontsize: 12px; 
+               fontsize: 14px; 
             }
         input, button { padding: 5px; margin: 5px; }
         #ai-response { border: 1px solid #444; 
@@ -16,20 +16,17 @@
             
         .user-question { background-color: blue; 
             color: white;
-            font: bold;
+            fontsize: 14px;
         }
         .ai-thinking {
             background-color: white;
             color: gray;
+            fontsize: 14px;
         }
         .ai-response-normal {
             background-color: #eee;
             color: black;
-        }
-
-        /* 新增样式，设置Markdown渲染后的默认字号为9px */
-        .user-question p, .ai-response-normal p, .ai-thinking p {
-            font-size: 14px;
+            fontsize: 14px;
         }
 
         .input-container {
@@ -53,8 +50,8 @@
     <!-- 添加模型选择下拉框 -->
     <select id="model-select">
         <option value="deepseek-r1:latest">deepseek-r1:latest</option>
-        <option value="deepseek-r1:32b" selected>deepseek-r1:32b</option> <!-- 将默认选项设为 deepseek-r1:32b -->
-        <option value="deepseek-r1:70b">deepseek-r1:70b</option>
+        <option value="deepseek-r1:32b">deepseek-r1:32b</option>
+        <option value="deepseek-r1:70b" selected>deepseek-r1:70b</option>
     </select>
 </div>
 
@@ -109,7 +106,7 @@
             // 创建用户问题元素
             const userQuestion = document.createElement('div');
             userQuestion.classList.add('user-question');
-            userQuestion.innerHTML = `${marked.parse('User')} ${marked.parse(prompt)}`;
+            userQuestion.innerText = `User: ${prompt}`;
             aiResponseDiv.appendChild(userQuestion);
 
             // 处理 AI 回复
@@ -122,7 +119,7 @@
                 aiThinking.classList.add('ai-thinking');
                 const thinkingText = aiResponseText.substring(thinkingStartIndex + 7, thinkingEndIndex);
                 // 使用marked渲染思考部分的Markdown内容
-                aiThinking.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(thinkingText)}`;
+                aiThinking.innerHTML = `${selectedModel}: ${marked.parse(thinkingText)}`;
                 aiResponseDiv.appendChild(aiThinking);
 
                 // 创建 AI 正常回复部分元素
@@ -130,14 +127,14 @@
                 aiNormalResponse.classList.add('ai-response-normal');
                 const normalResponseText = aiResponseText.substring(thinkingEndIndex + 8);
                 // 使用marked渲染正常回复部分的Markdown内容
-                aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(normalResponseText)}`;
+                aiNormalResponse.innerHTML = `${selectedModel}:\n ${marked.parse(normalResponseText)}`;
                 aiResponseDiv.appendChild(aiNormalResponse);
             } else {
                 // 没有思考部分，直接创建 AI 正常回复部分元素
                 const aiNormalResponse = document.createElement('div');
                 aiNormalResponse.classList.add('ai-response-normal');
                 // 使用marked渲染正常回复部分的Markdown内容
-                aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(aiResponseText)}`;
+                aiNormalResponse.innerHTML = `${selectedModel}: ${marked.parse(aiResponseText)}`;
                 aiResponseDiv.appendChild(aiNormalResponse);
             }
 

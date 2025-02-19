@@ -6,11 +6,16 @@ import re
 
 app = Flask(__name__)
 
+# 读取配置文件
+with open('config.json', 'r') as f:
+    config = json.load(f)
+
 # SSH连接参数
-SSH_HOST = '192.168.182.124'
-SSH_PORT = 22
-SSH_USER = 'ywwu'
-SSH_PASSWORD = 'wjswyw119'  # 如果使用私钥，则可以不填
+SSH_HOST = config.get('SSH_HOST')
+SSH_PORT = config.get('SSH_PORT')
+SSH_USER = config.get('SSH_USER')
+# 从配置文件中读取密码
+SSH_PASSWORD = config.get('SSH_PASSWORD')  # 如果使用私钥，则可以不填
 
 # 用于存储对话历史
 all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
@@ -23,7 +28,7 @@ def index():
 @app.route('/query', methods=['POST'])
 def query():
     user_input = request.json.get('prompt').strip()
-    selected_model = request.json.get('model', 'deepseek-r1:32b')  # 获取选择的模型，默认为 deepseek-r1:32b
+    selected_model = request.json.get('model', 'deepseek-r1:32b')  # 这里默认模型已经是 deepseek-r1:32b，无需修改
     if not user_input:
         return jsonify({"error": "Prompt is required!"}), 400
 
