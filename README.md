@@ -12,7 +12,7 @@ This project provides a web-based interface to interact with an AI model, utiliz
 
 ## Requirements
 
-- **Python 3.x**: The application is built using Python 3 and the Flask framework.
+- **Python 3.10.11: The application is built using Python 3 and the Flask framework.
 - **Flask**: A micro web framework for Python.
 - **Paramiko**: For SSH connection to a remote server.
 - **A DeepSeek-R1 AI Model**: The system interacts with the DeepSeek-R1 AI model hosted on a remote server via an API.
