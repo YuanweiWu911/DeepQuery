@@ -1,3 +1,3 @@
-Flask
-paramiko
-requests
+Flask==3.1.0
+paramiko==3.5.1
+requests==2.32.3
