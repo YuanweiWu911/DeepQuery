@@ -1,7 +1,88 @@
-/* styles.css */
-#result {
-    border: none;
-    border-width: 0;
-    width: 90%;
-    border-radius: 1px;
+/* General Styles */
+body {
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+}
+
+.page-title {
+    font-size: 20px;
+    text-align: center;
+}
+
+input, button {
+    padding: 5px;
+    margin: 5px;
+}
+
+#ai-response {
+    border: 1px solid #444;
+    padding: 10px;
+    margin-top: 5px;
+    height: 450px;
+    overflow-y: scroll;
+    clear: both;
+}
+
+.user-question {
+    background-color: blue;
+    color: white;
+    font-weight: bold;
+}
+
+.ai-thinking {
+    background-color: white;
+    color: gray;
+}
+
+.ai-response-normal {
+    background-color: #eee;
+    color: black;
+}
+
+.user-question p,
+.ai-response-normal p,
+.ai-thinking p {
+    font-size: 14px;
+}
+
+.input-container {
+    text-align: center;
+    margin-top: 5px;
+}
+
+select {
+    margin: 0 auto;
+}
+
+#ai-response:empty::before {
+    content: attr(placeholder);
+}
+
+.textarea-container {
+    position: relative;
+    display: inline-block;
+}
+
+.textarea-container textarea {
+    padding-right: 40px;
+}
+
+.textarea-container button {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+    margin: 0;
+}
+
+/* Layout for buttons and selects */
+#new-chat-button {
+    float: left;
+    margin-top: 5px;
+    margin-left: 5px;
+}
+
+#model-select {
+    float: right;
+    margin-top: 5px;
+    margin-right: 5px;
 }

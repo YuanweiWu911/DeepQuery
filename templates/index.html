@@ -5,100 +5,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Query Interface</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            font-size: 12px;
-        }
-
-        input,
-        button {
-            padding: 5px;
-            margin: 5px;
-        }
-
-        #ai-response {
-            border: 1px solid #444;
-            padding: 10px;
-            margin-top: 5px;
-            height: 450px;
-            overflow-y: scroll;
-            clear: both; /* 清除浮动影响 */
-        }
-
-        .user-question {
-            background-color: blue;
-            color: white;
-            font-weight: bold;
-        }
-
-        .ai-thinking {
-            background-color: white;
-            color: gray;
-        }
-
-        .ai-response-normal {
-            background-color: #eee;
-            color: black;
-        }
-
-        .user-question p,
-        .ai-response-normal p,
-        .ai-thinking p {
-            font-size: 14px;
-        }
-
-        .input-container {
-            text-align: center;
-            margin-top: 5px;
-        }
-
-        select {
-            margin: 0 auto;
-        }
-
-        #ai-response:empty::before {
-            content: attr(placeholder);
-        }
-
-        .textarea-container {
-            position: relative;
-            display: inline-block;
-        }
-
-        .textarea-container textarea {
-            padding-right: 40px;
-        }
-
-        .textarea-container button {
-            position: absolute;
-            bottom: 5px;
-            right: 5px;
-            margin: 0;
-        }
-
-        /* 新增样式，用于定位 new chat 按钮 */
-        #new-chat-button {
-            float: left; /* 左浮动，使其与 select 同一行 */
-            margin-top: 5px;
-            margin-left: 5px;
-        }
-
-        #model-select {
-            float: right; /* 右浮动，使其与 new chat 按钮同一行 */
-            margin-top: 5px;
-            margin-right: 5px;
-        }
-    </style>
+    <link rel="stylesheet" href="static/styles.css">
 </head>
 
 <body>
-    <h2 style="font-size: 20px; text-align: center;">Remote DeepSeek-R1</h2>
+    <h2 class="page-title">Remote DeepSeek-R1</h2>
 
     <div class="input-container">
-        <!-- new chat 按钮 -->
         <button id="new-chat-button" onclick="newChat()">New Chat</button>
-        <!-- 添加模型选择下拉框 -->
         <select id="model-select">
             <option value="deepseek-r1:latest">deepseek-r1:latest</option>
             <option value="deepseek-r1:32b" selected>deepseek-r1:32b</option>
@@ -106,16 +20,12 @@
         </select>
     </div>
 
-    <!-- <h2>System outputs:</h2> -->
-    <!-- <pre id="result"></pre> -->
-
-    <!--  <h1>AI Response:</h1>  -->
     <div id="ai-response" placeholder="What can I do for you..." contenteditable="true"></div>
 
-    <div style="text-align: center; margin-top: 5px;" class="input-container">
+    <div class="input-container">
         <div class="textarea-container">
             <textarea id="prompt" rows="5" cols="80" placeholder="请输入你的问题，回车键发送..."></textarea>
-            <button onclick="sendQuery()">Enter</button>
+            <button id="send-button" onclick="sendQuery()">Enter</button>
         </div>
     </div>
 
@@ -123,6 +33,9 @@
     <script>
         let context = "";
         const textarea = document.getElementById('prompt');
+        const sendButton = document.getElementById('send-button');
+
+        // 监听文本框的 keydown 事件
         textarea.addEventListener('keydown', function (event) {
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
@@ -130,6 +43,7 @@
             }
         });
 
+        // 发送查询的函数
         async function sendQuery() {
             const prompt = document.getElementById('prompt').value;
             const selectedModel = document.getElementById('model-select').value;
@@ -138,50 +52,55 @@
                 return;
             }
 
-            const response = await fetch('/query', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ prompt, context, model: selectedModel }),
-            });
+            try {
+                const response = await fetch('/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ prompt, context, model: selectedModel }),
+                });
 
-            const result = await response.json();
-            if (result.error) {
-                document.getElementById('ai-response').innerText = result.error;
-            } else {
-                const aiResponseDiv = document.getElementById('ai-response');
-                const userQuestion = document.createElement('div');
-                userQuestion.classList.add('user-question');
-                userQuestion.innerHTML = `${marked.parse('User')} ${marked.parse(prompt)}`;
-                aiResponseDiv.appendChild(userQuestion);
-
-                const aiResponseText = result.response;
-                const thinkingStartIndex = aiResponseText.indexOf('<think>');
-                const thinkingEndIndex = aiResponseText.indexOf('</think>');
-                if (thinkingStartIndex !== -1 && thinkingEndIndex !== -1) {
-                    const aiThinking = document.createElement('div');
-                    aiThinking.classList.add('ai-thinking');
-                    const thinkingText = aiResponseText.substring(thinkingStartIndex + 7, thinkingEndIndex);
-                    aiThinking.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(thinkingText)}`;
-                    aiResponseDiv.appendChild(aiThinking);
-
-                    const aiNormalResponse = document.createElement('div');
-                    aiNormalResponse.classList.add('ai-response-normal');
-                    const normalResponseText = aiResponseText.substring(thinkingEndIndex + 8);
-                    aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(normalResponseText)}`;
-                    aiResponseDiv.appendChild(aiNormalResponse);
+                const result = await response.json();
+                if (result.error) {
+                    document.getElementById('ai-response').innerText = result.error;
                 } else {
-                    const aiNormalResponse = document.createElement('div');
-                    aiNormalResponse.classList.add('ai-response-normal');
-                    aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(aiResponseText)}`;
-                    aiResponseDiv.appendChild(aiNormalResponse);
-                }
+                    const aiResponseDiv = document.getElementById('ai-response');
+                    const userQuestion = document.createElement('div');
+                    userQuestion.classList.add('user-question');
+                    userQuestion.innerHTML = `${marked.parse('User')} ${marked.parse(prompt)}`;
+                    aiResponseDiv.appendChild(userQuestion);
 
-                context = result.context;
+                    const aiResponseText = result.response;
+                    const thinkingStartIndex = aiResponseText.indexOf('<think>');
+                    const thinkingEndIndex = aiResponseText.indexOf('</think>');
+                    if (thinkingStartIndex !== -1 && thinkingEndIndex !== -1) {
+                        const aiThinking = document.createElement('div');
+                        aiThinking.classList.add('ai-thinking');
+                        const thinkingText = aiResponseText.substring(thinkingStartIndex + 7, thinkingEndIndex);
+                        aiThinking.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(thinkingText)}`;
+                        aiResponseDiv.appendChild(aiThinking);
+
+                        const aiNormalResponse = document.createElement('div');
+                        aiNormalResponse.classList.add('ai-response-normal');
+                        const normalResponseText = aiResponseText.substring(thinkingEndIndex + 8);
+                        aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(normalResponseText)}`;
+                        aiResponseDiv.appendChild(aiNormalResponse);
+                    } else {
+                        const aiNormalResponse = document.createElement('div');
+                        aiNormalResponse.classList.add('ai-response-normal');
+                        aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(aiResponseText)}`;
+                        aiResponseDiv.appendChild(aiNormalResponse);
+                    }
+
+                    context = result.context;
+                }
+            } catch (error) {
+                console.error('Error sending query:', error);
             }
         }
 
+        // 开始新聊天的函数
         async function newChat() {
             try {
                 const response = await fetch('/new-chat', {
