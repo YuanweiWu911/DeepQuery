@@ -2,6 +2,8 @@
 
 This project provides a web-based interface to interact with an AI model, utilizing a Flask backend for querying an LLM (Large Language Model) remotely via SSH.
 
+![GUI Demo](Demo_DeepQuery.png) <!-- Replace with actual screenshot -->
+
 ## Features
 
 - **User-Friendly Interface**: The web interface allows you to enter prompts, select AI models, and view AI responses in a clean format.
