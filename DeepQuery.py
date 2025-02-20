@@ -16,8 +16,6 @@ template_folder = os.path.join(base_dir, 'templates')
 # 创建 Flask 应用实例，并指定静态文件和模板文件的路径
 app = Flask(__name__, static_folder=static_folder, template_folder=template_folder)
 
-#app = Flask(__name__)
-
 # 读取配置文件
 with open('config.json', 'r') as f:
     config = json.load(f)
@@ -118,8 +116,7 @@ def new_chat():
     return jsonify({"status": "success"})
 
 if __name__ == "__main__":
-    webbrowser.open('http://127.0.0.1:5000/')
-    app.run(debug=True, host='0.0.0.0') 
-#   app.run(debug=False, host='0.0.0.0')
+    app.run(debug=False, host='0.0.0.0')
 
-#webbrowser.open('http://127.0.0.1:5000/')
+
+webbrowser.open('http://127.0.0.1:5000/')

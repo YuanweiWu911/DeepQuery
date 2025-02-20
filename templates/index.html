@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Query Interface</title>
-    <link rel="stylesheet" href="styles.css"> <!-- 引入样式表 -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <style>
         /* 保留之前的样式 */
         body {
@@ -120,9 +120,6 @@
         </select>
     </div>
 
-    <!-- <h2>System outputs:</h2> -->
-    <pre id="result"></pre>
-
     <!--  <h1>AI Response:</h1>  -->
     <div id="ai-response" placeholder="What can I do for you..." contenteditable="true">
         <!-- 新增 new chat 按钮 -->
@@ -167,10 +164,10 @@
 
             const result = await response.json(); // 解析 JSON 响应
             if (result.error) {
-                document.getElementById('result').innerText = result.error; // 显示错误
                 document.getElementById('ai-response').innerText = ''; // 清空 AI 对话框
+                document.getElementById('ai-response').innerText = result.error; // 显示错误
             } else {
-                document.getElementById('result').innerText = 'Prompt submitted successfully!'; // 显示提示消息
+                document.getElementById('ai-response').innerText = 'Prompt submitted successfully!'; // 显示提示消息
                 const aiResponseDiv = document.getElementById('ai-response');
                 // 创建用户问题元素
                 const userQuestion = document.createElement('div');
