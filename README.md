@@ -24,7 +24,6 @@ This project provides a web-based interface to interact with an AI model, utiliz
    ```bash
    pip install -r requirements.txt
    ```
-
 ### Configuration
 
 The project requires an SSH connection to a remote server for querying the AI model.
@@ -50,6 +49,10 @@ The project requires an SSH connection to a remote server for querying the AI mo
 
 2. Open the web interface by visiting `http://127.0.0.1:5000/` in your browser.
 
+### Windows system compile to exe file
+```powershell
+pyinstaller --add-data "templates;templates" --add-data "static;static" --add-data "icon.ico;." --onefile --name DeepQuery --icon=icon.ico DeepQuery.py
+```
 ## Usage
 
 1. **Prompt Input**: Enter your query in the text box and press **Enter** to send it.
