@@ -28,7 +28,7 @@ def index():
 @app.route('/query', methods=['POST'])
 def query():
     user_input = request.json.get('prompt').strip()
-    selected_model = request.json.get('model', 'deepseek-r1:32b')  # 这里默认模型已经是 deepseek-r1:32b，无需修改
+    selected_model = request.json.get('model', 'deepseek-r1:32b')
     if not user_input:
         return jsonify({"error": "Prompt is required!"}), 400
 
@@ -56,7 +56,7 @@ def query():
         "history":{json.dumps(all_messages)}}}'
         """
         
-        print(f"Executing command: {command}")
+#       print(f"Executing command: {command}")
 
         stdin, stdout, stderr = ssh.exec_command(command)
 
@@ -69,23 +69,20 @@ def query():
         if error:
             return jsonify({"error": error}), 500
         
-#       print(f"Raw response from model: {response}")
-
         response_json = json.loads(response)
         generated_response = response_json.get("response", "")
-#       print("generated_response: \n", generated_response)
         
         # 解析 <think> 标签
         parts = re.split(r'(<think>.*?</think>)', generated_response, flags=re.IGNORECASE | re.DOTALL)
-        print(parts)
+#       print(parts)
         think_content = ""
         for part in parts:
             if part.startswith('<think>') and part.endswith('</think>'):
                 think_content = part[7:-8]  # 去掉 <think> 标签
-                print("think_content: \n", think_content)
+#               print("think_content: \n", think_content)
             elif part:
                 ai_response = part.replace("\n", "").strip()
-                print("ai_response: \n", ai_response)
+#               print("ai_response: \n", ai_response)
         
         # 更新上下文
         all_messages.append({"role": "system", "content": ai_response})
@@ -100,5 +97,12 @@ def query():
         print(f"An exception occurred: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/new-chat', methods=['POST'])
+def new_chat():
+    global all_messages
+    all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
+    return jsonify({"status": "success"})
+
 if __name__ == "__main__":
-    app.run(debug=True, host='0.0.0.0')
+    app.run(debug=True, host='0.0.0.0') 
+#   app.run(debug=False, host='0.0.0.0')
