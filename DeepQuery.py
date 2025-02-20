@@ -33,6 +33,11 @@ all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
 # 用于存储网络搜索结果
 web_context = "" 
 
+@app.before_request
+def ignore_favicon():
+    if request.path == '/favicon.ico':
+        return '', 204
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -116,7 +121,6 @@ def new_chat():
     return jsonify({"status": "success"})
 
 if __name__ == "__main__":
+    webbrowser.open('http://127.0.0.1:5000/')
     app.run(debug=False, host='0.0.0.0')
 
-
-webbrowser.open('http://127.0.0.1:5000/')
