@@ -102,9 +102,11 @@ async def query(request: Request):
             "model": selected_model,
             "prompt": prompt,
             "stream": False,
-            "max_tokens": 2048,
+            "max_tokens": 20480,
             "temperature": 0.6,
             "top_p": 0.9,
+            "n": 2,
+            "best_of": 3,
             "history": all_messages
         }
         data_json = json.dumps(data)
@@ -242,4 +244,3 @@ if __name__ == "__main__":
         import uvicorn
 
         uvicorn.run(app, host='0.0.0.0', port=8000)
-
