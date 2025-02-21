@@ -7,10 +7,13 @@ import re
 import webbrowser
 import logging
 import requests
+import shlex
+
 
 # 配置日志记录
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.ERROR)
 
 ###################################################################
 # 获取当前脚本所在的目录
@@ -78,7 +81,6 @@ def query():
         # 构建 prompt
         prompt = f"""[系统指令] 你是一个AI助手, 当前日期为{datetime.now().strftime('%Y-%m-%d')} \
 以下是来自网络的实时信息片段(可能不完整): {web_context} [用户问题] {user_input} """
-#       print("prompt: ", prompt)
         
         # 构建请求数据
         data = {
@@ -90,18 +92,16 @@ def query():
             "top_p": 0.9,
             "history": all_messages
         }
-        
+        data_json = json.dumps(data) 
         command = [
             "curl",
             "-s",
             "-X", "POST",
             "http://localhost:11434/api/generate",
-            "-H", "\"Content-Type: application/json\"",
-            "-d", f"\'{json.dumps(data)}\'"
+            "-H", "Content-Type: application/json",
+            "-d", shlex.quote(data_json)
         ]
     
-#       print(f"Executing command: {' '.join(command)}")
-        
         # 在 SSH 上执行命令
         stdin, stdout, stderr = ssh.exec_command(' '.join(command))
 
@@ -110,17 +110,19 @@ def query():
         error = stderr.read().decode()
 
         ssh.close()
-
+        if '{"error":"unexpected EOF"}' in response:
+            logger.error(f"SSH command error: {response}")
+            return jsonify({"error": response}), 500
         if error:
-            print(f"SSH command error: {error}")
+            logger.error(f"SSH command error: {error}")
             return jsonify({"error": error}), 500
         
         try:
             response_json = json.loads(response)
             generated_response = response_json.get("response", "")
-#           print("generated_response: ", generated_response)
+
         except json.JSONDecodeError as e:
-            print(f"JSON decode error: {e}")
+            logger.error(f"JSON decode error: {e}")
             return jsonify({"error": f"JSON decode error: {e}"}), 500
         
         # 解析 <think> 标签
@@ -135,14 +137,13 @@ def query():
         # 更新上下文
         all_messages.append({"role": "system", "content": ai_response})
         formatted_messages = json.dumps(all_messages, indent=4, ensure_ascii=False)
-#       print("formatted_messages: \n", formatted_messages)
         
         return jsonify({
             "response": generated_response
         })
 
     except Exception as e:
-        print(f"An exception occurred: {e}")
+        logger.error(f"An exception occurred: {e}")
         return jsonify({"error": str(e)}), 500
 @app.route('/new-chat', methods=['POST'])
 def new_chat():
@@ -217,4 +218,4 @@ if __name__ == "__main__":
         logger.error("SERPER_API_KEY 未设置，请设置该环境变量后再运行程序。")
     else:
         webbrowser.open('http://127.0.0.1:5000/')
-        app.run(debug=True, host='0.0.0.0')
+        app.run(debug=False, host='0.0.0.0')
