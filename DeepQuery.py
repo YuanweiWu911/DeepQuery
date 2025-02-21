@@ -1,20 +1,16 @@
+###################################################################
 import os
-import json
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+import json
+import logging
 import paramiko
 import re
-import webbrowser
-import logging
 import requests
 import shlex
-
-
-# 配置日志记录
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.ERROR)
-
+import webbrowser
 ###################################################################
 # 获取当前脚本所在的目录
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -23,8 +19,16 @@ base_dir = os.path.dirname(os.path.abspath(__file__))
 static_folder = os.path.join(base_dir, 'static')
 template_folder = os.path.join(base_dir, 'templates')
 
-# 创建 Flask 应用实例，并指定静态文件和模板文件的路径
-app = Flask(__name__, static_folder=static_folder, template_folder=template_folder)
+# 创建 FastAPI 应用实例
+app = FastAPI()
+
+# 挂载静态文件目录
+app.mount("/static", StaticFiles(directory=static_folder), name="static")  # 新增挂载
+
+# 配置日志记录
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 # 读取配置文件
 with open('config.json', 'r') as f:
@@ -40,33 +44,42 @@ SSH_PASSWORD = config.get('SSH_PASSWORD')  # 如果使用私钥，则可以不�
 # 用于存储对话历史
 all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
 
-@app.before_request
-def ignore_favicon():
-    if request.path == '/favicon.ico':
-        return '', 204
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+@app.get("/favicon.ico")
+async def favicon():
+    return FileResponse(os.path.join(base_dir, 'static', 'favicon.ico'), media_type='image/vnd.microsoft.icon')
 
-@app.route('/query', methods=['POST'])
-def query():
-    user_input = request.json.get('prompt').strip()
+
+@app.get("/")
+async def index():
+    with open(os.path.join(template_folder, 'index.html'), 'r', encoding='utf-8') as f:
+        html_content = f.read()
+    return HTMLResponse(content=html_content)
+
+
+@app.post("/query")
+async def query(request: Request):
+    data = await request.json()
+    user_input = data.get('prompt').strip()
     logger.info(f"Received User message: {user_input}")
+    if not isinstance(user_input, (str, bytes)):
+        logger.error(f"Unexpected data type for user_input: {type(user_input)}")
+        return JSONResponse(content={"error": "Invalid user_input data type"}, status_code=400)
 
-    selected_model = request.json.get('model', 'deepseek-r1:32b')
+    selected_model = data.get('model', 'deepseek-r1:32b')
     logger.info(f"Use {selected_model} LLM model")
 
-    is_search_on = request.json.get('search_toggle', False)  # 修改默认值为 False
+    is_search_on = data.get('search_toggle', False)  # 修改默认值为 False
     web_context = ""  # Default value when search is off
 
     # If search is on, call the web_search function
     if is_search_on:
-        logger.info(f"web search User message: {user_input}")
+        logger.info(f"web search: {user_input}")
         web_context = web_search(user_input)
-    
-    if not user_input:
-        return jsonify({"error": "Prompt is required!"}), 400
+        logger.info(f"search results: {web_context}")
+        if not isinstance(web_context, (str, bytes)):
+            logger.error(f"Unexpected data type for web_context: {type(web_context)}")
+            return JSONResponse(content={"error": "Invalid web_context data type"}, status_code=400)
 
     try:
 
@@ -77,11 +90,13 @@ def query():
 
         # 添加用户消息到对话历史
         all_messages.append({"role": "user", "content": user_input})
+        logger.info(f"all_messages: {all_messages}")
 
         # 构建 prompt
         prompt = f"""[系统指令] 你是一个AI助手, 当前日期为{datetime.now().strftime('%Y-%m-%d')} \
 以下是来自网络的实时信息片段(可能不完整): {web_context} [用户问题] {user_input} """
-        
+        print(f"prompt: {prompt}")
+
         # 构建请求数据
         data = {
             "model": selected_model,
@@ -92,7 +107,8 @@ def query():
             "top_p": 0.9,
             "history": all_messages
         }
-        data_json = json.dumps(data) 
+        data_json = json.dumps(data)
+        print(data_json)
         command = [
             "curl",
             "-s",
@@ -101,7 +117,8 @@ def query():
             "-H", "Content-Type: application/json",
             "-d", shlex.quote(data_json)
         ]
-    
+        logger.info("ssh exec_command: " + ' '.join(command))
+
         # 在 SSH 上执行命令
         stdin, stdout, stderr = ssh.exec_command(' '.join(command))
 
@@ -112,19 +129,19 @@ def query():
         ssh.close()
         if '{"error":"unexpected EOF"}' in response:
             logger.error(f"SSH command error: {response}")
-            return jsonify({"error": response}), 500
+            return JSONResponse(content={"error": response}, status_code=500)
         if error:
             logger.error(f"SSH command error: {error}")
-            return jsonify({"error": error}), 500
-        
+            return JSONResponse(content={"error": error}, status_code=500)
+
         try:
             response_json = json.loads(response)
             generated_response = response_json.get("response", "")
 
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error: {e}")
-            return jsonify({"error": f"JSON decode error: {e}"}), 500
-        
+            return JSONResponse(content={"error": f"JSON decode error: {e}"}, status_code=500)
+
         # 解析 <think> 标签
         parts = re.split(r'(<think>.*?</think>)', generated_response, flags=re.IGNORECASE | re.DOTALL)
         for part in parts:
@@ -137,27 +154,30 @@ def query():
         # 更新上下文
         all_messages.append({"role": "system", "content": ai_response})
         formatted_messages = json.dumps(all_messages, indent=4, ensure_ascii=False)
-        
-        return jsonify({
-            "response": generated_response
-        })
+
+        return JSONResponse(content={"response": generated_response})
 
     except Exception as e:
         logger.error(f"An exception occurred: {e}")
-        return jsonify({"error": str(e)}), 500
-@app.route('/new-chat', methods=['POST'])
-def new_chat():
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@app.post("/new-chat")
+async def new_chat():
     global all_messages
     all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
-    return jsonify({"status": "success"})
+    return JSONResponse(content={"status": "success"})
+
 
 # 新增 web_search 函数，用于进行网络搜索
 # 如果需要作为路由函数，取消下面一行的注释
-@app.route('/web_search', methods=['POST'])
-def handle_web_search():
-    prompt = request.json.get('prompt')
+@app.post("/web_search")
+async def handle_web_search(request: Request):
+    data = await request.json()
+    prompt = data.get('prompt')
     search_result = web_search(prompt)
-    return jsonify({"web_context": search_result})
+    return JSONResponse(content={"web_context": search_result})
+
 
 def web_search(prompt):
     """
@@ -212,10 +232,14 @@ def web_search(prompt):
         logger.error(f"Unknown error: {e}")
         return f"未知异常: {str(e)}"
 
+
 if __name__ == "__main__":
     # 检查 SERPER_API_KEY 是否设置
     if os.getenv("SERPER_API_KEY") is None:
         logger.error("SERPER_API_KEY 未设置，请设置该环境变量后再运行程序。")
     else:
-        webbrowser.open('http://127.0.0.1:5000/')
-        app.run(debug=False, host='0.0.0.0')
+        webbrowser.open('http://127.0.0.1:8000/')
+        import uvicorn
+
+        uvicorn.run(app, host='0.0.0.0', port=8000)
+
