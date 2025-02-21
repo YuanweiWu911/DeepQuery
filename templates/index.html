@@ -14,7 +14,7 @@
     <div class="input-container">
         <button id="new-chat-button" onclick="newChat()">New Chat</button>
         <select id="model-select">
-            <option value="deepseek-r1:latest">deepseek-r1:latest</option>
+            <option value="deepseek-r1:latest">deepseek-r1:7b</option>
             <option value="deepseek-r1:32b" selected>deepseek-r1:32b</option>
             <option value="deepseek-r1:70b">deepseek-r1:70b</option>
         </select>
@@ -26,14 +26,18 @@
         <div class="textarea-container">
             <textarea id="prompt" rows="5" cols="80" placeholder="请输入你的问题，回车键发送..."></textarea>
             <button id="send-button" onclick="sendQuery()">Enter</button>
+            <!-- 新增 search on/off 按钮 -->
+            <button id="search-toggle" class="off" onclick="toggleSearch()">Search</button>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
         let context = "";
+        let isSearchOn = false;  // 新增变量，用于记录 search on/off 按钮的状态
         const textarea = document.getElementById('prompt');
         const sendButton = document.getElementById('send-button');
+        const searchToggle = document.getElementById('search-toggle');
 
         // 监听文本框的 keydown 事件
         textarea.addEventListener('keydown', function (event) {
@@ -51,16 +55,33 @@
                 alert("Prompt cannot be empty!");
                 return;
             }
-
+        
+            let web_context = "";  // 初始化 web_context
+        
+            // 根据 search on/off 按钮的状态，设置 web_context 的值
+            if (isSearchOn) {
+                try {
+                    const searchResponse = await fetch('/web_search', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ prompt: prompt })
+                    });
+                    const searchData = await searchResponse.json();
+                    web_context = searchData.web_context;
+                } catch (error) {
+                    console.error('Search failed:', error);
+                }
+            }
+        
             try {
                 const response = await fetch('/query', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ prompt, context, model: selectedModel }),
+                    body: JSON.stringify({ prompt, context, model: selectedModel, search_toggle: isSearchOn }),  // 确保传递 isSearchOn 的值
                 });
-
+        
                 const result = await response.json();
                 if (result.error) {
                     document.getElementById('ai-response').innerText = result.error;
@@ -70,7 +91,7 @@
                     userQuestion.classList.add('user-question');
                     userQuestion.innerHTML = `${marked.parse('User')} ${marked.parse(prompt)}`;
                     aiResponseDiv.appendChild(userQuestion);
-
+        
                     const aiResponseText = result.response;
                     const thinkingStartIndex = aiResponseText.indexOf('<think>');
                     const thinkingEndIndex = aiResponseText.indexOf('</think>');
@@ -80,7 +101,7 @@
                         const thinkingText = aiResponseText.substring(thinkingStartIndex + 7, thinkingEndIndex);
                         aiThinking.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(thinkingText)}`;
                         aiResponseDiv.appendChild(aiThinking);
-
+        
                         const aiNormalResponse = document.createElement('div');
                         aiNormalResponse.classList.add('ai-response-normal');
                         const normalResponseText = aiResponseText.substring(thinkingEndIndex + 8);
@@ -92,7 +113,7 @@
                         aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(aiResponseText)}`;
                         aiResponseDiv.appendChild(aiNormalResponse);
                     }
-
+        
                     context = result.context;
                 }
             } catch (error) {
@@ -116,6 +137,18 @@
                 }
             } catch (error) {
                 console.error('Error resetting chat:', error);
+            }
+        }
+
+        // 新增函数，用于切换 search on/off 按钮的状态
+        function toggleSearch() {
+            isSearchOn = !isSearchOn;
+            if (isSearchOn) {
+                searchToggle.classList.remove('off');
+                searchToggle.classList.add('on');
+            } else {
+                searchToggle.classList.remove('on');
+                searchToggle.classList.add('off');
             }
         }
     </script>

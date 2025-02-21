@@ -18,14 +18,15 @@ input, button {
     border: 1px solid #444;
     padding: 10px;
     margin-top: 5px;
-    height: 450px;
-    overflow-y: scroll;
+    min-height: 200px; /* 设置最小高度 */
+    overflow-y: auto; /* 当内容超出高度时显示垂直滚动条 */
     clear: both;
+    flex: 1; /* 让该元素自动填充剩余空间 */
 }
 
 .user-question {
-    background-color: blue;
-    color: white;
+    background-color: lightgreen;
+    color: black;
     font-weight: bold;
 }
 
@@ -35,7 +36,7 @@ input, button {
 }
 
 .ai-response-normal {
-    background-color: #eee;
+    background-color: lightcyan;
     color: black;
 }
 
@@ -61,28 +62,49 @@ select {
 .textarea-container {
     position: relative;
     display: inline-block;
+    width: 100%;
 }
 
 .textarea-container textarea {
     padding-right: 40px;
+    width: 100%; /* 设置宽度为页面宽度的 80% */
+    max-width: 100%; /* 确保不会超出容器宽度 */
+    box-sizing: border-box; /* 让内边距和边框包含在宽度内 */
+    resize: vertical; /* 允许垂直调整大小 */
 }
-
-.textarea-container button {
-    position: absolute;
-    bottom: 5px;
-    right: 5px;
-    margin: 0;
-}
-
 /* Layout for buttons and selects */
 #new-chat-button {
     float: left;
-    margin-top: 5px;
-    margin-left: 5px;
+    margin-top: 0px;
+    margin-bottom: 2px;
+    margin-left: 0px;
 }
 
 #model-select {
     float: right;
-    margin-top: 5px;
-    margin-right: 5px;
+    margin-top: 10px;
+    margin-right: 0px;
 }
+
+#send-button {
+    position: relative;
+    float: right;
+    bottom: 5px;
+    margin-right: 0px;
+}
+
+/* 新增样式，用于控制 search on/off 按钮的样式 */
+#search-toggle {
+    position: relative;
+    float: left;
+    bottom: 5px;
+    margin-left: 0px;
+}
+
+#search-toggle.on {
+    background-color: lightgreen;
+}
+
+#search-toggle.off { 
+    background-color:lightgrey; 
+ } 
