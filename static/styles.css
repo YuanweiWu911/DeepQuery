@@ -93,6 +93,20 @@ select {
     margin-right: 0px;
 }
 
+/* 新增样式，用于控制 reason on/off 按钮的样式 */
+#reason-toggle {
+    position: relative;
+    bottom: 5px;
+}
+
+#reason-toggle.on {
+    background-color: lightgreen;
+}
+
+#reason-toggle.off { 
+    background-color:lightgrey; 
+ } 
+
 /* 新增样式，用于控制 search on/off 按钮的样式 */
 #search-toggle {
     position: relative;

@@ -28,6 +28,8 @@
             <button id="send-button" onclick="sendQuery()">Enter</button>
             <!-- 新增 search on/off 按钮 -->
             <button id="search-toggle" class="off" onclick="toggleSearch()">Search</button>
+            <!-- 新增 Reason 按钮 -->
+            <button id="reason-toggle" class="off" onclick="toggleReason()">Reason</button>
         </div>
     </div>
 
@@ -35,9 +37,11 @@
     <script>
         let context = "";
         let isSearchOn = false;  // 新增变量，用于记录 search on/off 按钮的状态
+        let isReasonOn = false;  // 新增变量，用于记录 reason on/off 按钮的状态
         const textarea = document.getElementById('prompt');
         const sendButton = document.getElementById('send-button');
         const searchToggle = document.getElementById('search-toggle');
+        const reasonToggle = document.getElementById('reason-toggle'); // 获取 Reason 按钮
 
         // 监听文本框的 keydown 事件
         textarea.addEventListener('keydown', function (event) {
@@ -96,17 +100,20 @@
                     const thinkingStartIndex = aiResponseText.indexOf('<think>');
                     const thinkingEndIndex = aiResponseText.indexOf('</think>');
                     if (thinkingStartIndex !== -1 && thinkingEndIndex !== -1) {
-                        const aiThinking = document.createElement('div');
-                        aiThinking.classList.add('ai-thinking');
-                        const thinkingText = aiResponseText.substring(thinkingStartIndex + 7, thinkingEndIndex);
-                        aiThinking.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(thinkingText)}`;
-                        aiResponseDiv.appendChild(aiThinking);
-        
+                        // 仅当 Reason 按钮被按下时，才输出 ThinkingText
+                        if (isReasonOn) {
+                            const aiThinking = document.createElement('div');
+                            aiThinking.classList.add('ai-thinking');
+                            const thinkingText = aiResponseText.substring(thinkingStartIndex + 7, thinkingEndIndex);
+                            aiThinking.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(thinkingText)}`;
+                            aiResponseDiv.appendChild(aiThinking);
+                        }
                         const aiNormalResponse = document.createElement('div');
                         aiNormalResponse.classList.add('ai-response-normal');
                         const normalResponseText = aiResponseText.substring(thinkingEndIndex + 8);
                         aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(normalResponseText)}`;
                         aiResponseDiv.appendChild(aiNormalResponse);
+
                     } else {
                         const aiNormalResponse = document.createElement('div');
                         aiNormalResponse.classList.add('ai-response-normal');
@@ -149,6 +156,18 @@
             } else {
                 searchToggle.classList.remove('on');
                 searchToggle.classList.add('off');
+            }
+        }
+
+        // 新增函数，用于切换 reason on/off 按钮的状态
+        function toggleReason() {
+            isReasonOn = !isReasonOn;
+            if (isReasonOn) {
+                reasonToggle.classList.remove('off');
+                reasonToggle.classList.add('on');
+            } else {
+                reasonToggle.classList.remove('on');
+                reasonToggle.classList.add('off');
             }
         }
     </script>
