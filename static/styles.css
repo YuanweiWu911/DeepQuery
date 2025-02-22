@@ -87,16 +87,33 @@ select {
 }
 
 #send-button {
+    position: absolute;
+    bottom: 40px;
+    right: 0px;
+}
+
+#save-button {
+    position: relative;
+    padding-left: 7px;
+    padding-right: 7px;
+    float: right;
+    bottom: 5px;
+      
+    margin-right: 5px;
+}
+
+#markdown-button{
     position: relative;
     float: right;
     bottom: 5px;
-    margin-right: 0px;
+    margin-right: 5px;
 }
 
-/* 新增样式，用于控制 reason on/off 按钮的样式 */
 #reason-toggle {
-    position: relative;
+    position: absolute;
+    float: left;
     bottom: 5px;
+    left: 55px;
 }
 
 #reason-toggle.on {
@@ -107,7 +124,6 @@ select {
     background-color:lightgrey; 
  } 
 
-/* 新增样式，用于控制 search on/off 按钮的样式 */
 #search-toggle {
     position: relative;
     float: left;
@@ -122,3 +138,11 @@ select {
 #search-toggle.off { 
     background-color:lightgrey; 
  } 
+
+#thinking-icon {
+    position: fixed;
+    top: 30%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 9999;
+}

@@ -6,6 +6,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Query Interface</title>
     <link rel="stylesheet" href="static/styles.css">
+    <script src="https://unpkg.com/turndown@7.1.1/dist/turndown.js"></script>
+    <style>
+        /* 定义一个 CSS 类来设置字体大小 */
+       .large-font {
+            font-size: 24px;
+        }
+    </style>
 </head>
 
 <body>
@@ -26,11 +33,19 @@
         <div class="textarea-container">
             <textarea id="prompt" rows="5" cols="80" placeholder="请输入你的问题，回车键发送..."></textarea>
             <button id="send-button" onclick="sendQuery()">Enter</button>
+            <!-- 新增 Save 按钮 -->
+            <button id="save-button" onclick="saveMessages()">Json</button>
+            <button id="markdown-button" onclick="saveAsMarkdown()">Markdown</button>
             <!-- 新增 search on/off 按钮 -->
             <button id="search-toggle" class="off" onclick="toggleSearch()">Search</button>
             <!-- 新增 Reason 按钮 -->
             <button id="reason-toggle" class="off" onclick="toggleReason()">Reason</button>
         </div>
+    </div>
+
+    <!-- 新增 thinking 图标 -->
+    <div id="thinking-icon" style="display: none;">
+        <img src="static/thinking.gif" alt="Thinking...">
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -42,6 +57,8 @@
         const sendButton = document.getElementById('send-button');
         const searchToggle = document.getElementById('search-toggle');
         const reasonToggle = document.getElementById('reason-toggle'); // 获取 Reason 按钮
+        const saveButton = document.getElementById('save-button'); // 获取 Save 按钮
+        const thinkingIcon = document.getElementById('thinking-icon'); // 获取 thinking 图标
 
         // 监听文本框的 keydown 事件
         textarea.addEventListener('keydown', function (event) {
@@ -49,6 +66,26 @@
                 event.preventDefault();
                 sendQuery();
             }
+        });
+
+        // 建立WebSocket连接
+        const socket = new WebSocket('ws://localhost:8765');
+
+        socket.addEventListener('open', (event) => {
+            console.log('WebSocket connection established');  // 新增日志记录
+        });
+    
+        socket.addEventListener('message', (event) => {
+            console.log('Received message:', event.data);  // 新增日志记录
+            if (event.data === "start") {
+                thinkingIcon.style.display = "block";
+            } else if (event.data === "end") {
+                thinkingIcon.style.display = "none";
+            }
+        });
+    
+        socket.addEventListener('error', (event) => {
+            console.error('WebSocket error:', event);  // 新增错误处理
         });
 
         // 发送查询的函数
@@ -59,9 +96,9 @@
                 alert("Prompt cannot be empty!");
                 return;
             }
-        
+
             let web_context = "";  // 初始化 web_context
-        
+
             // 根据 search on/off 按钮的状态，设置 web_context 的值
             if (isSearchOn) {
                 try {
@@ -169,6 +206,52 @@
                 reasonToggle.classList.remove('on');
                 reasonToggle.classList.add('off');
             }
+        }
+
+        // 新增函数，用于保存 all_messages 为 JSON 文件
+        async function saveMessages() {
+            try {
+                const response = await fetch('/get-all-messages', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const allMessages = await response.json();
+                const jsonData = JSON.stringify(allMessages, null, 2);
+                const blob = new Blob([jsonData], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'all_messages.json';
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error('Error saving messages:', error);
+            }
+        }
+        // 新增函数，用于将 ai_response 中的内容以 Markdown 格式保存
+        async function saveAsMarkdown() {
+            const aiResponseDiv = document.getElementById('ai-response');
+            const aiResponseText = aiResponseDiv.innerHTML;
+
+            // 创建 TurndownService 实例                                         
+            const turndownService = new TurndownService();
+            // 将 HTML 转换为 Markdown
+            const markdownText = turndownService.turndown(aiResponseText);
+        
+            // 创建一个 Blob 对象，将内容保存为 Markdown 文件
+            const blob = new Blob([markdownText], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+    
+            // 创建一个 <a> 元素，用于触发下载
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'ai_response.md';
+            a.click();
+    
+            // 释放 URL 对象
+            URL.revokeObjectURL(url);
         }
     </script>
 </body>
