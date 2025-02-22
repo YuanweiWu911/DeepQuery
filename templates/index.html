@@ -26,6 +26,8 @@
         <div class="textarea-container">
             <textarea id="prompt" rows="5" cols="80" placeholder="请输入你的问题，回车键发送..."></textarea>
             <button id="send-button" onclick="sendQuery()">Enter</button>
+            <!-- 新增 Save 按钮 -->
+            <button id="save-button" onclick="saveMessages()">Save</button>
             <!-- 新增 search on/off 按钮 -->
             <button id="search-toggle" class="off" onclick="toggleSearch()">Search</button>
             <!-- 新增 Reason 按钮 -->
@@ -42,6 +44,7 @@
         const sendButton = document.getElementById('send-button');
         const searchToggle = document.getElementById('search-toggle');
         const reasonToggle = document.getElementById('reason-toggle'); // 获取 Reason 按钮
+        const saveButton = document.getElementById('save-button'); // 获取 Save 按钮
 
         // 监听文本框的 keydown 事件
         textarea.addEventListener('keydown', function (event) {
@@ -168,6 +171,29 @@
             } else {
                 reasonToggle.classList.remove('on');
                 reasonToggle.classList.add('off');
+            }
+        }
+
+        // 新增函数，用于保存 all_messages 为 JSON 文件
+        async function saveMessages() {
+            try {
+                const response = await fetch('/get-all-messages', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const allMessages = await response.json();
+                const jsonData = JSON.stringify(allMessages, null, 2);
+                const blob = new Blob([jsonData], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'all_messages.json';
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error('Error saving messages:', error);
             }
         }
     </script>

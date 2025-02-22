@@ -234,6 +234,10 @@ def web_search(prompt):
         logger.error(f"Unknown error: {e}")
         return f"未知异常: {str(e)}"
 
+@app.get("/get-all-messages")
+async def get_all_messages():
+    global all_messages
+    return JSONResponse(content=all_messages)
 
 if __name__ == "__main__":
     # 检查 SERPER_API_KEY 是否设置
