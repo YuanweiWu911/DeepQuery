@@ -93,7 +93,6 @@ select {
     margin-right: 0px;
 }
 
-/* 新增 Save 按钮样式 */
 #save-button {
     position: relative;
     float: right;
@@ -101,7 +100,13 @@ select {
     margin-right: 5px;
 }
 
-/* 新增样式，用于控制 reason on/off 按钮的样式 */
+#markdown-button{
+    position: relative;
+    float: right;
+    bottom: 5px;
+    margin-right: 5px;
+}
+
 #reason-toggle {
     position: relative;
     bottom: 5px;
@@ -115,7 +120,6 @@ select {
     background-color:lightgrey; 
  } 
 
-/* 新增样式，用于控制 search on/off 按钮的样式 */
 #search-toggle {
     position: relative;
     float: left;

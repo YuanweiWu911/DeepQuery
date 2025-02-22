@@ -6,7 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Query Interface</title>
     <link rel="stylesheet" href="static/styles.css">
-    <script src="https://unpkg.com/turndown@7.1.1/dist/turndown.js"></script>
 </head>
 
 <body>
@@ -29,7 +28,6 @@
             <button id="send-button" onclick="sendQuery()">Enter</button>
             <!-- 新增 Save 按钮 -->
             <button id="save-button" onclick="saveMessages()">Save</button>
-            <button id="markdown-button" onclick="saveAsMarkdown()">Markdown</button>
             <!-- 新增 search on/off 按钮 -->
             <button id="search-toggle" class="off" onclick="toggleSearch()">Search</button>
             <!-- 新增 Reason 按钮 -->
@@ -197,29 +195,6 @@
             } catch (error) {
                 console.error('Error saving messages:', error);
             }
-        }
-        // 新增函数，用于将 ai_response 中的内容以 Markdown 格式保存
-        async function saveAsMarkdown() {
-            const aiResponseDiv = document.getElementById('ai-response');
-            const aiResponseText = aiResponseDiv.innerHTML;
-
-            // 创建 TurndownService 实例                                         
-            const turndownService = new TurndownService();
-            // 将 HTML 转换为 Markdown
-            const markdownText = turndownService.turndown(aiResponseText);
-        
-            // 创建一个 Blob 对象，将内容保存为 Markdown 文件
-            const blob = new Blob([markdownText], { type: 'text/markdown' });
-            const url = URL.createObjectURL(blob);
-    
-            // 创建一个 <a> 元素，用于触发下载
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'ai_response.md';
-            a.click();
-    
-            // 释放 URL 对象
-            URL.revokeObjectURL(url);
         }
     </script>
 </body>
