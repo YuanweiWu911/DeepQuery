@@ -174,6 +174,7 @@ async def query(request: Request):
             elif part:
                 ai_response = part.replace("\n", "").strip()
         if ai_response:
+            logger.info(f"{ai_response}")
             logger.info("AI answer finished!")
         # 更新上下文
         all_messages.append({"role": "system", "content": ai_response})

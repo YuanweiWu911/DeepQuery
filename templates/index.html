@@ -7,6 +7,12 @@
     <title>LLM Query Interface</title>
     <link rel="stylesheet" href="static/styles.css">
     <script src="https://unpkg.com/turndown@7.1.1/dist/turndown.js"></script>
+    <style>
+        /* 定义一个 CSS 类来设置字体大小 */
+       .large-font {
+            font-size: 24px;
+        }
+    </style>
 </head>
 
 <body>
@@ -28,7 +34,7 @@
             <textarea id="prompt" rows="5" cols="80" placeholder="请输入你的问题，回车键发送..."></textarea>
             <button id="send-button" onclick="sendQuery()">Enter</button>
             <!-- 新增 Save 按钮 -->
-            <button id="save-button" onclick="saveMessages()">Save</button>
+            <button id="save-button" onclick="saveMessages()">Json</button>
             <button id="markdown-button" onclick="saveAsMarkdown()">Markdown</button>
             <!-- 新增 search on/off 按钮 -->
             <button id="search-toggle" class="off" onclick="toggleSearch()">Search</button>
