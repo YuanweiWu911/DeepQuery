@@ -1,4 +1,3 @@
-###################################################################
 import os
 from datetime import datetime
 from fastapi import FastAPI, Request
@@ -11,6 +10,9 @@ import re
 import requests
 import shlex
 import webbrowser
+import asyncio
+import websockets
+
 ###################################################################
 # 获取当前脚本所在的目录
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -44,18 +46,31 @@ SSH_PASSWORD = config.get('SSH_PASSWORD')  # 如果使用私钥，则可以不�
 # 用于存储对话历史
 all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
 
+# 存储WebSocket连接
+connected_clients = set()
+
+# WebSocket处理函数
+async def handle_ws(websocket, path=None):
+    connected_clients.add(websocket)
+    try:
+        await websocket.wait_closed()
+    finally:
+        connected_clients.remove(websocket)
+
+# 启动WebSocket服务器的异步函数
+async def start_ws_server():
+    server = await websockets.serve(handle_ws, "localhost", 8765)
+    await server.wait_closed()
 
 @app.get("/favicon.ico")
 async def favicon():
     return FileResponse(os.path.join(base_dir, 'static', 'favicon.ico'), media_type='image/vnd.microsoft.icon')
-
 
 @app.get("/")
 async def index():
     with open(os.path.join(template_folder, 'index.html'), 'r', encoding='utf-8') as f:
         html_content = f.read()
     return HTMLResponse(content=html_content)
-
 
 @app.post("/query")
 async def query(request: Request):
@@ -82,7 +97,6 @@ async def query(request: Request):
             return JSONResponse(content={"error": "Invalid web_context data type"}, status_code=400)
 
     try:
-
         # 建立SSH连接
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -121,6 +135,14 @@ async def query(request: Request):
         ]
         logger.info("ssh exec_command: " + ' '.join(command))
 
+        # 通知前端开始执行命令
+        for client in connected_clients:
+            try:
+               await client.send("start")
+               logger.info("Sent 'start' message to client")  # 新增日志记录
+            except Exception as e:
+               logger.error(f"Failed to send 'start' message: {e}")
+
         # 在 SSH 上执行命令
         stdin, stdout, stderr = ssh.exec_command(' '.join(command))
 
@@ -157,19 +179,21 @@ async def query(request: Request):
         all_messages.append({"role": "system", "content": ai_response})
         formatted_messages = json.dumps(all_messages, indent=4, ensure_ascii=False)
 
+        # 通知前端命令执行完毕
+        for client in connected_clients:
+            await client.send("end")
+
         return JSONResponse(content={"response": generated_response})
 
     except Exception as e:
         logger.error(f"An exception occurred: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
-
 @app.post("/new-chat")
 async def new_chat():
     global all_messages
     all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
     return JSONResponse(content={"status": "success"})
-
 
 # 新增 web_search 函数，用于进行网络搜索
 # 如果需要作为路由函数，取消下面一行的注释
@@ -179,7 +203,6 @@ async def handle_web_search(request: Request):
     prompt = data.get('prompt')
     search_result = web_search(prompt)
     return JSONResponse(content={"web_context": search_result})
-
 
 def web_search(prompt):
     """
@@ -234,17 +257,29 @@ def web_search(prompt):
         logger.error(f"Unknown error: {e}")
         return f"未知异常: {str(e)}"
 
+
+
 @app.get("/get-all-messages")
 async def get_all_messages():
     global all_messages
     return JSONResponse(content=all_messages)
 
-if __name__ == "__main__":
+async def main():
     # 检查 SERPER_API_KEY 是否设置
     if os.getenv("SERPER_API_KEY") is None:
         logger.error("SERPER_API_KEY 未设置，请设置该环境变量后再运行程序。")
     else:
         webbrowser.open('http://127.0.0.1:8000/')
-        import uvicorn
 
-        uvicorn.run(app, host='0.0.0.0', port=8000)
+        # 启动WebSocket服务器
+        ws_server_task = asyncio.create_task(start_ws_server())
+
+        # 启动FastAPI应用
+        import uvicorn
+        config = uvicorn.Config(app, host='0.0.0.0', port=8000)
+        server = uvicorn.Server(config)
+        await server.serve()
+        await ws_server_task
+
+if __name__ == "__main__":
+    asyncio.run(main())

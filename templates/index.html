@@ -37,6 +37,11 @@
         </div>
     </div>
 
+    <!-- 新增 thinking 图标 -->
+    <div id="thinking-icon" style="display: none;">
+        <img src="static/thinking.gif" alt="Thinking...">
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
         let context = "";
@@ -47,6 +52,7 @@
         const searchToggle = document.getElementById('search-toggle');
         const reasonToggle = document.getElementById('reason-toggle'); // 获取 Reason 按钮
         const saveButton = document.getElementById('save-button'); // 获取 Save 按钮
+        const thinkingIcon = document.getElementById('thinking-icon'); // 获取 thinking 图标
 
         // 监听文本框的 keydown 事件
         textarea.addEventListener('keydown', function (event) {
@@ -54,6 +60,26 @@
                 event.preventDefault();
                 sendQuery();
             }
+        });
+
+        // 建立WebSocket连接
+        const socket = new WebSocket('ws://localhost:8765');
+
+        socket.addEventListener('open', (event) => {
+            console.log('WebSocket connection established');  // 新增日志记录
+        });
+    
+        socket.addEventListener('message', (event) => {
+            console.log('Received message:', event.data);  // 新增日志记录
+            if (event.data === "start") {
+                thinkingIcon.style.display = "block";
+            } else if (event.data === "end") {
+                thinkingIcon.style.display = "none";
+            }
+        });
+    
+        socket.addEventListener('error', (event) => {
+            console.error('WebSocket error:', event);  // 新增错误处理
         });
 
         // 发送查询的函数
@@ -64,9 +90,9 @@
                 alert("Prompt cannot be empty!");
                 return;
             }
-        
+
             let web_context = "";  // 初始化 web_context
-        
+
             // 根据 search on/off 按钮的状态，设置 web_context 的值
             if (isSearchOn) {
                 try {
