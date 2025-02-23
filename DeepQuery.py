@@ -307,7 +307,7 @@ async def main():
     if os.getenv("SERPER_API_KEY") is None:
         logger.error("SERPER_API_KEY is not set. Please set this environment variable before running the program.")
     else:
-        webbrowser.open('http://127.0.0.1:8000/')
+        webbrowser.open('http://localhost:8000/')
 
         # Start the WebSocket server
         ws_server_task = asyncio.create_task(start_ws_server())
