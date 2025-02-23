@@ -76,24 +76,25 @@ select {
 }
 /* Layout for buttons and selects */
 #new-chat-button {
-    float: left;
+    float: right;
     margin-top: 0px;
     margin-bottom: 2px;
-    margin-left: 0px;
+    margin-right: 0px;
 }
 
 #load-chat-button {
-    float: left;
+    float: right;
     margin-top: 0px;
     margin-bottom: 2px;
-    margin-left: 5px;
+    margin-right: 0px;
 }
 
 #local-remote-toggle {
     position: relative;
-    float: right;
+    float: left;
     bottom: 5px;
-    margin-right: 0px;
+    left: 0px;
+    margin-left: 0px;
 }
 
 #local-remote-toggle.on {
@@ -107,9 +108,8 @@ select {
 }
 
 #model-select {
-    float: right;
+    float: left;
     margin-top: 10px;
-    margin-right: 0px;
 }
 
 #send-button {
@@ -124,8 +124,8 @@ select {
     padding-right: 7px;
     float: right;
     bottom: 5px;
-      
-    margin-right: 5px;
+    margin-left: 0px;
+    margin-right: 0px;
 }
 
 #markdown-button{
@@ -136,10 +136,10 @@ select {
 }
 
 #reason-toggle {
-    position: absolute;
+    position: relative;
     float: left;
     bottom: 5px;
-    left: 55px;
+    margin-left: 0px;
 }
 
 
@@ -158,6 +158,7 @@ select {
     float: left;
     bottom: 5px;
     margin-left: 0px;
+    margin-right: 5px;
 }
 
 #search-toggle.on {
