@@ -7,17 +7,6 @@
     <title>LLM Query Interface</title>
     <link rel="stylesheet" href="static/styles.css">
     <script src="https://unpkg.com/turndown@7.1.1/dist/turndown.js"></script>
-    <style>
-        /* 定义一个 CSS 类来设置字体大小 */
-       .large-font {
-            font-size: 24px;
-        }
-        /* 新增按钮点击效果的样式 */
-        .button-clicked {
-            background-color: #ccc;
-            box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.3);
-        }
-    </style>
 </head>
 
 <body>
@@ -25,6 +14,8 @@
 
     <div class="input-container">
         <button id="new-chat-button" onclick="newChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">New Chat</button>
+        <!-- 新增 load chat 按钮 -->
+        <button id="load-chat-button" onclick="loadChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Load Chat</button>
         <select id="model-select">
             <option value="deepseek-r1:latest">deepseek-r1:7b</option>
             <option value="deepseek-r1:32b" selected>deepseek-r1:32b</option>
@@ -62,6 +53,7 @@
         const sendButton = document.getElementById('send-button');
         const searchToggle = document.getElementById('search-toggle');
         const reasonToggle = document.getElementById('reason-toggle'); // 获取 Reason 按钮
+        const aiResponseDiv = document.getElementById('ai-response');
         const saveButton = document.getElementById('save-button'); // 获取 Save 按钮
         const thinkingIcon = document.getElementById('thinking-icon'); // 获取 thinking 图标
 
@@ -188,6 +180,56 @@
                 console.error('Error resetting chat:', error);
             }
         }
+
+        // 新增 load chat 函数
+        async function loadChat() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = async (event) => {
+                        try {
+                            const content = JSON.parse(event.target.result);
+                            const response = await fetch('/load-chat', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify(content)
+                            });
+                            if (response.ok) {
+                                const data = await response.json();
+                                aiResponseDiv.innerHTML = '';
+                                data.forEach(message => {
+                                    const div = document.createElement('div');
+                                    // 将消息对象转换为格式化的 JSON 字符串
+                                    const jsonText = JSON.stringify(message, null, 2);
+                                    // 使用 <pre> 标签包裹 JSON 文本
+                                    const pre = document.createElement('pre');
+                                    pre.textContent = jsonText;
+                                    // 设置字体大小，这里设置为 16px，你可以根据需要调整
+                                    pre.style.fontSize = '16px'; 
+                                    // 设置 white-space 属性为 pre-wrap, 允许换行
+                                    pre.style.whiteSpace = 'pre-wrap'; 
+                                    // 设置 word-wrap 属性为 break-word，强制长单词换行
+                                    pre.style.wordWrap = 'break-word'; 
+                                    div.appendChild(pre);
+                                    aiResponseDiv.appendChild(div);
+                                });
+                            }
+                        } catch (error) {
+                            console.error('Error loading chat:', error);
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+            };
+            input.click();
+        }
+
 
         // 新增函数，用于切换 search on/off 按钮的状态
         function toggleSearch() {

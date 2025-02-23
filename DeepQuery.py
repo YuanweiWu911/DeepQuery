@@ -196,6 +196,14 @@ async def new_chat():
     all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
     return JSONResponse(content={"status": "success"})
 
+# 新增 load chat 路由
+@app.post("/load-chat")
+async def load_chat(request: Request):
+    global all_messages
+    data = await request.json()
+    all_messages = data
+    return JSONResponse(content=all_messages)
+
 # 新增 web_search 函数，用于进行网络搜索
 # 如果需要作为路由函数，取消下面一行的注释
 @app.post("/web_search")
