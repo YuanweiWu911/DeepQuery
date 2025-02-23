@@ -145,19 +145,22 @@
                             const aiThinking = document.createElement('div');
                             aiThinking.classList.add('ai-thinking');
                             const thinkingText = aiResponseText.substring(thinkingStartIndex + 7, thinkingEndIndex);
-                            aiThinking.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(thinkingText)}`;
+                            convertedText = convertUrlsToLinks(thinkingText);
+                            aiThinking.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(convertedText)}`;
                             aiResponseDiv.appendChild(aiThinking);
                         }
                         const aiNormalResponse = document.createElement('div');
                         aiNormalResponse.classList.add('ai-response-normal');
                         const normalResponseText = aiResponseText.substring(thinkingEndIndex + 8);
-                        aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(normalResponseText)}`;
+                        convertedText = convertUrlsToLinks(normalResponseText);
+                        aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(convertedText)}`;
                         aiResponseDiv.appendChild(aiNormalResponse);
 
                     } else {
                         const aiNormalResponse = document.createElement('div');
                         aiNormalResponse.classList.add('ai-response-normal');
-                        aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(aiResponseText)}`;
+                        convertedText = convertUrlsToLinks(aiResponseText);
+                        aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(convertedText)}`;
                         aiResponseDiv.appendChild(aiNormalResponse);
                     }
         
@@ -283,6 +286,16 @@
                 reasonToggle.classList.add('off');
             }
         }
+
+        function convertUrlsToLinks(text) {
+            // 匹配网址的正则表达式
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+        
+            // 将匹配到的网址替换为超链接
+            return text.replace(urlRegex, function(url) {
+                return `[${url}]`;
+            });
+	}
 
         // New function to save all messages as a JSON file
         async function saveMessages() {
