@@ -13,10 +13,11 @@
     <h2 class="page-title">DeepSeek-R1 Query Tool</h2>
 
     <div class="input-container">
-        <button id="new-chat-button" onclick="newChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">New Chat</button>
-        <!-- New load chat button -->
+        <!-- Load Chat button -->
         <button id="load-chat-button" onclick="loadChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Load Chat</button>
-        <!-- New local/remote toggle button -->
+        <!-- New Chat button -->
+        <button id="new-chat-button" onclick="newChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">New Chat</button>
+        <!-- local/remote toggle button -->
         <button id="local-remote-toggle" class="off" onclick="toggleLocalRemote()">Local</button>
         <select id="model-select">
             <option value="deepseek-r1:1.5b">deepseek-r1:1.5b</option>
@@ -32,17 +33,18 @@
         <div class="textarea-container">
             <textarea id="prompt" rows="5" cols="80" placeholder="Please enter your question and press Enter to send..."></textarea>
             <button id="send-button" onclick="sendQuery()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Enter</button>
-            <!-- New Save button -->
+            <!-- Save as Json button -->
             <button id="save-button" onclick="saveMessages()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Json</button>
+            <!-- Save as Markdown button -->
             <button id="markdown-button" onclick="saveAsMarkdown()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Markdown</button>
-            <!-- New search on/off button -->
+            <!-- Search on/off button -->
             <button id="search-toggle" class="off" onclick="toggleSearch()">Search</button>
-            <!-- New Reason button -->
+            <!-- Reason button -->
             <button id="reason-toggle" class="off" onclick="toggleReason()">Reason</button>
         </div>
     </div>
 
-    <!-- New thinking icon -->
+    <!-- Thinking icon -->
     <div id="thinking-icon" style="display: none;">
         <img src="static/thinking.gif" alt="Thinking...">
     </div>
@@ -50,9 +52,9 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
         let context = "";
-        let isSearchOn = false; // New variable to record the state of the search on/off button
-        let isReasonOn = false; // New variable to record the state of the reason on/off button
-        let isRemote = false; // New variable to record the state of the toggle-remote/local button
+        let isSearchOn = false; 
+        let isReasonOn = false; 
+        let isRemote = false; 
         const textarea = document.getElementById('prompt');
         const sendButton = document.getElementById('send-button');
         const searchToggle = document.getElementById('search-toggle');
@@ -73,11 +75,11 @@
         const socket = new WebSocket('ws://localhost:8765');
 
         socket.addEventListener('open', (event) => {
-            console.log('WebSocket connection established'); // New log record
+            console.log('WebSocket connection established'); // 
         });
 
         socket.addEventListener('message', (event) => {
-            console.log('Received message:', event.data); // New log record
+            console.log('Received message:', event.data); // 
             if (event.data === "start") {
                 thinkingIcon.style.display = "block";
             } else if (event.data === "end") {
@@ -86,7 +88,7 @@
         });
     
         socket.addEventListener('error', (event) => {
-            console.error('WebSocket error:', event);  // New error handling
+            console.error('WebSocket error:', event);  // 
         });
 
         // Function to send query
