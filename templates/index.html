@@ -12,6 +12,11 @@
        .large-font {
             font-size: 24px;
         }
+        /* 新增按钮点击效果的样式 */
+        .button-clicked {
+            background-color: #ccc;
+            box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.3);
+        }
     </style>
 </head>
 
@@ -19,7 +24,7 @@
     <h2 class="page-title">Remote DeepSeek-R1</h2>
 
     <div class="input-container">
-        <button id="new-chat-button" onclick="newChat()">New Chat</button>
+        <button id="new-chat-button" onclick="newChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">New Chat</button>
         <select id="model-select">
             <option value="deepseek-r1:latest">deepseek-r1:7b</option>
             <option value="deepseek-r1:32b" selected>deepseek-r1:32b</option>
@@ -32,10 +37,10 @@
     <div class="input-container">
         <div class="textarea-container">
             <textarea id="prompt" rows="5" cols="80" placeholder="请输入你的问题，回车键发送..."></textarea>
-            <button id="send-button" onclick="sendQuery()">Enter</button>
+            <button id="send-button" onclick="sendQuery()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Enter</button>
             <!-- 新增 Save 按钮 -->
-            <button id="save-button" onclick="saveMessages()">Json</button>
-            <button id="markdown-button" onclick="saveAsMarkdown()">Markdown</button>
+            <button id="save-button" onclick="saveMessages()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Json</button>
+            <button id="markdown-button" onclick="saveAsMarkdown()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Markdown</button>
             <!-- 新增 search on/off 按钮 -->
             <button id="search-toggle" class="off" onclick="toggleSearch()">Search</button>
             <!-- 新增 Reason 按钮 -->
