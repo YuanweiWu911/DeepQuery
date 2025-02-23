@@ -43,6 +43,8 @@ SSH_USER = config.get('SSH_USER')
 # Read the password from the configuration file
 SSH_PASSWORD = config.get('SSH_PASSWORD')  # If using a private key, you can leave it blank
 
+#
+is_remote = False
 # Used to store the conversation history
 all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
 
@@ -74,6 +76,7 @@ async def index():
 
 @app.post("/query")
 async def query(request: Request):
+    global is_remote
     data = await request.json()
     user_input = data.get('prompt').strip()
     if not isinstance(user_input, (str, bytes)):
@@ -82,12 +85,8 @@ async def query(request: Request):
     else:
         # Add the user message to the conversation history
         all_messages.append({"role": "user", "content": user_input})
-        logger.info(f"all_messages: {all_messages}")
     
-#   is_remote = data.get('isRemote')
-    is_remote = True
-    is_remote = False
-    logger.info(f"Received User message: {user_input}")
+    logger.info(f"[User Message]: {user_input}")
     if is_remote:
         # Here you can add code to access the remote model via SSH
         logger.info('Accessing remote model via SSH')
@@ -105,9 +104,9 @@ async def query(request: Request):
 
     # If search is on, call the web_search function
     if is_search_on:
-        logger.info(f"web search: {user_input}")
+        logger.info(f"[Web Search]: {user_input}")
         web_context = web_search(user_input)
-        logger.info(f"search results: {web_context}")
+        logger.info(f"[Search result]: {web_context}")
         if not isinstance(web_context, (str, bytes)):
             logger.error(f"Unexpected data type for web_context: {type(web_context)}")
             return JSONResponse(content={"error": "Invalid web_context data type"}, status_code=400)
@@ -146,13 +145,13 @@ async def query(request: Request):
                 "-H", "Content-Type: application/json",
                 "-d", shlex.quote(data_json)
             ]
-            logger.info("ssh exec_command: " + ' '.join(command))
+            logger.info("[Remote SSH]: " + ' '.join(command))
     
             # Notify the front end to start executing the command
             for client in connected_clients:
                 try:
                    await client.send("start")
-                   logger.info("Sent 'start' message to client")  # New log record
+                   logger.info("[Message Sent]: 'start' message to client")  # New log record
                 except Exception as e:
                    logger.error(f"Failed to send 'start' message: {e}")
 
@@ -181,15 +180,22 @@ async def query(request: Request):
                 return JSONResponse(content={"error": f"JSON decode error: {e}"}, status_code=500)
     
         else:
-            # Execute the command locally
             # Send the request directly to the local server
-            logger.info(f"request  "+"http://localhost:11434/api/generate "+data_json)
+            logger.info(f"[Local Request] "+"http://localhost:11434/api/generate "+data_json)
             response = requests.post(
                 "http://localhost:11434/api/generate",
                 data=data_json
             )
             response.raise_for_status()
-    
+
+            # Notify the front end to start executing the command
+            for client in connected_clients:
+                try:
+                   await client.send("start")
+                   logger.info("[Message Sent]: 'start' message to client")  # New log record
+                except Exception as e:
+                   logger.error(f"Failed to send 'start' message: {e}")
+   
             response_text = response.text
             if '{"error":"unexpected EOF"}' in response_text:
                 logger.error(f"HTTP request error: {response_text}")
@@ -211,8 +217,7 @@ async def query(request: Request):
             elif part:
                 ai_response = part.replace("\n", "").strip()
         if ai_response:
-            logger.info(f"{ai_response}")
-            logger.info("AI answer finished!")
+            logger.info(f"[AI response] {ai_response}")
         # Update the context
         all_messages.append({"role": "system", "content": ai_response})
         formatted_messages = json.dumps(all_messages, indent=4, ensure_ascii=False)
@@ -262,7 +267,6 @@ def web_search(prompt):
         "X-API-KEY": api_key,
         "Content-Type": "application/json"
     }
-    logger.info(f"web search Using API key: {api_key}")
     proxy_url = os.getenv("PROXY_URL")
     try:
         if proxy_url:
@@ -327,15 +331,15 @@ async def main():
 
 @app.post("/toggle-local-remote")
 async def toggle_local_remote(request: Request):
+    global is_remote
     data = await request.json()
     is_remote = data.get('isRemote')
     if is_remote:
         # Here you can add code to access the remote model via SSH
-        logger.info('Accessing remote model via SSH')
+        logger.info('[Access] remote model via SSH')
     else:
         # Here you can add code to access the local model directly
-        print('Accessing local model directly')
-        logger.info('Accessing local model directly')
+        logger.info('[Access] local model directly')
     return JSONResponse(content={"status": "success"})
 
 if __name__ == "__main__":
