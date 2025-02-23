@@ -14,42 +14,42 @@ import asyncio
 import websockets
 
 ###################################################################
-# 获取当前脚本所在的目录
+# Get the directory where the current script is located
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
-# 构建静态文件和模板文件的路径
+# Build the paths for static files and template files
 static_folder = os.path.join(base_dir, 'static')
 template_folder = os.path.join(base_dir, 'templates')
 
-# 创建 FastAPI 应用实例
+# Create a FastAPI application instance
 app = FastAPI()
 
-# 挂载静态文件目录
-app.mount("/static", StaticFiles(directory=static_folder), name="static")  # 新增挂载
+# Mount the static file directory
+app.mount("/static", StaticFiles(directory=static_folder), name="static")  # New mount
 
-# 配置日志记录
+# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
-# 读取配置文件
+# Read the configuration file
 with open('config.json', 'r') as f:
     config = json.load(f)
 
-# SSH连接参数
+# SSH connection parameters
 SSH_HOST = config.get('SSH_HOST')
 SSH_PORT = config.get('SSH_PORT')
 SSH_USER = config.get('SSH_USER')
-# 从配置文件中读取密码
-SSH_PASSWORD = config.get('SSH_PASSWORD')  # 如果使用私钥，则可以不填
+# Read the password from the configuration file
+SSH_PASSWORD = config.get('SSH_PASSWORD')  # If using a private key, you can leave it blank
 
-# 用于存储对话历史
+# Used to store the conversation history
 all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
 
-# 存储WebSocket连接
+# Store WebSocket connections
 connected_clients = set()
 
-# WebSocket处理函数
+# WebSocket handler function
 async def handle_ws(websocket, path=None):
     connected_clients.add(websocket)
     try:
@@ -57,7 +57,7 @@ async def handle_ws(websocket, path=None):
     finally:
         connected_clients.remove(websocket)
 
-# 启动WebSocket服务器的异步函数
+# Asynchronous function to start the WebSocket server
 async def start_ws_server():
     server = await websockets.serve(handle_ws, "localhost", 8765)
     await server.wait_closed()
@@ -84,7 +84,7 @@ async def query(request: Request):
     selected_model = data.get('model', 'deepseek-r1:32b')
     logger.info(f"Use {selected_model} LLM model")
 
-    is_search_on = data.get('search_toggle', False)  # 修改默认值为 False
+    is_search_on = data.get('search_toggle', False)  # Change the default value to False
     web_context = ""  # Default value when search is off
 
     # If search is on, call the web_search function
@@ -97,21 +97,21 @@ async def query(request: Request):
             return JSONResponse(content={"error": "Invalid web_context data type"}, status_code=400)
 
     try:
-        # 建立SSH连接
+        # Establish an SSH connection
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER, password=SSH_PASSWORD)
 
-        # 添加用户消息到对话历史
+        # Add the user message to the conversation history
         all_messages.append({"role": "user", "content": user_input})
         logger.info(f"all_messages: {all_messages}")
 
-        # 构建 prompt
-        prompt = f"""[系统指令] 你是一个AI助手, 当前日期为{datetime.now().strftime('%Y-%m-%d')} \
-以下是来自网络的实时信息片段(可能不完整): {web_context} [用户问题] {user_input} """
+        # Build the prompt
+        prompt = f"""[System Instruction] You are an AI assistant. The current date is {datetime.now().strftime('%Y-%m-%d')} 
+The following is a real-time information snippet from the web (may be incomplete): {web_context} [User Question] {user_input} """
         print(f"prompt: {prompt}")
 
-        # 构建请求数据
+        # Build the request data
         data = {
             "model": selected_model,
             "prompt": prompt,
@@ -135,18 +135,18 @@ async def query(request: Request):
         ]
         logger.info("ssh exec_command: " + ' '.join(command))
 
-        # 通知前端开始执行命令
+        # Notify the front end to start executing the command
         for client in connected_clients:
             try:
                await client.send("start")
-               logger.info("Sent 'start' message to client")  # 新增日志记录
+               logger.info("Sent 'start' message to client")  # New log record
             except Exception as e:
                logger.error(f"Failed to send 'start' message: {e}")
 
-        # 在 SSH 上执行命令
+        # Execute the command on SSH
         stdin, stdout, stderr = ssh.exec_command(' '.join(command))
 
-        # 获取执行结果
+        # Get the execution result
         response = stdout.read().decode()
         error = stderr.read().decode()
 
@@ -166,21 +166,21 @@ async def query(request: Request):
             logger.error(f"JSON decode error: {e}")
             return JSONResponse(content={"error": f"JSON decode error: {e}"}, status_code=500)
 
-        # 解析 <think> 标签
+        # Parse the <think> tag
         parts = re.split(r'(<think>.*?</think>)', generated_response, flags=re.IGNORECASE | re.DOTALL)
         for part in parts:
             if part.startswith('<think>') and part.endswith('</think>'):
-                think_content = part[7:-8]  # 去掉 <think> 标签
+                think_content = part[7:-8]  # Remove the <think> tag
             elif part:
                 ai_response = part.replace("\n", "").strip()
         if ai_response:
             logger.info(f"{ai_response}")
             logger.info("AI answer finished!")
-        # 更新上下文
+        # Update the context
         all_messages.append({"role": "system", "content": ai_response})
         formatted_messages = json.dumps(all_messages, indent=4, ensure_ascii=False)
 
-        # 通知前端命令执行完毕
+        # Notify the front end that the command execution is complete
         for client in connected_clients:
             await client.send("end")
 
@@ -196,7 +196,7 @@ async def new_chat():
     all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
     return JSONResponse(content={"status": "success"})
 
-# 新增 load chat 路由
+# New load chat route
 @app.post("/load-chat")
 async def load_chat(request: Request):
     global all_messages
@@ -204,8 +204,8 @@ async def load_chat(request: Request):
     all_messages = data
     return JSONResponse(content=all_messages)
 
-# 新增 web_search 函数，用于进行网络搜索
-# 如果需要作为路由函数，取消下面一行的注释
+# New web_search function for web search
+# If you need it as a route function, uncomment the following line
 @app.post("/web_search")
 async def handle_web_search(request: Request):
     data = await request.json()
@@ -215,7 +215,7 @@ async def handle_web_search(request: Request):
 
 def web_search(prompt):
     """
-    同步执行网络搜索，使用 google.serper API 返回前10个搜索结果内容列表。
+    Execute a web search synchronously and return a list of the top 10 search result contents using the google.serper API.
     """
     api_key = os.getenv("SERPER_API_KEY")
     if api_key is None:
@@ -255,18 +255,16 @@ def web_search(prompt):
             )
             return formatted_results
         else:
-            return "未找到搜索结果"
+            return "find no searching result"
     except requests.RequestException as e:
         logger.error(f"RequestException: {e}")
-        return f"请求异常: {str(e)}"
+        return f"RequestException: {str(e)}"
     except ValueError as e:
         logger.error(f"JSON error: {e}")
-        return f"JSON解析异常: {str(e)}"
+        return f"JSON error: {str(e)}"
     except Exception as e:
         logger.error(f"Unknown error: {e}")
-        return f"未知异常: {str(e)}"
-
-
+        return f"unknown error: {str(e)}"
 
 @app.get("/get-all-messages")
 async def get_all_messages():
@@ -274,16 +272,16 @@ async def get_all_messages():
     return JSONResponse(content=all_messages)
 
 async def main():
-    # 检查 SERPER_API_KEY 是否设置
+    # Check if SERPER_API_KEY is set
     if os.getenv("SERPER_API_KEY") is None:
-        logger.error("SERPER_API_KEY 未设置，请设置该环境变量后再运行程序。")
+        logger.error("SERPER_API_KEY is not set. Please set this environment variable before running the program.")
     else:
         webbrowser.open('http://127.0.0.1:8000/')
 
-        # 启动WebSocket服务器
+        # Start the WebSocket server
         ws_server_task = asyncio.create_task(start_ws_server())
 
-        # 启动FastAPI应用
+        # Start the FastAPI application
         import uvicorn
         config = uvicorn.Config(app, host='0.0.0.0', port=8000)
         server = uvicorn.Server(config)

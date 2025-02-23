@@ -14,7 +14,7 @@
 
     <div class="input-container">
         <button id="new-chat-button" onclick="newChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">New Chat</button>
-        <!-- 新增 load chat 按钮 -->
+        <!-- New load chat button -->
         <button id="load-chat-button" onclick="loadChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Load Chat</button>
         <select id="model-select">
             <option value="deepseek-r1:latest">deepseek-r1:7b</option>
@@ -27,19 +27,19 @@
 
     <div class="input-container">
         <div class="textarea-container">
-            <textarea id="prompt" rows="5" cols="80" placeholder="请输入你的问题，回车键发送..."></textarea>
+            <textarea id="prompt" rows="5" cols="80" placeholder="Please enter your question and press Enter to send..."></textarea>
             <button id="send-button" onclick="sendQuery()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Enter</button>
-            <!-- 新增 Save 按钮 -->
+            <!-- New Save button -->
             <button id="save-button" onclick="saveMessages()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Json</button>
             <button id="markdown-button" onclick="saveAsMarkdown()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Markdown</button>
-            <!-- 新增 search on/off 按钮 -->
+            <!-- New search on/off button -->
             <button id="search-toggle" class="off" onclick="toggleSearch()">Search</button>
-            <!-- 新增 Reason 按钮 -->
+            <!-- New Reason button -->
             <button id="reason-toggle" class="off" onclick="toggleReason()">Reason</button>
         </div>
     </div>
 
-    <!-- 新增 thinking 图标 -->
+    <!-- New thinking icon -->
     <div id="thinking-icon" style="display: none;">
         <img src="static/thinking.gif" alt="Thinking...">
     </div>
@@ -47,17 +47,17 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script>
         let context = "";
-        let isSearchOn = false;  // 新增变量，用于记录 search on/off 按钮的状态
-        let isReasonOn = false;  // 新增变量，用于记录 reason on/off 按钮的状态
+        let isSearchOn = false; // New variable to record the state of the search on/off button
+        let isReasonOn = false; // New variable to record the state of the reason on/off button
         const textarea = document.getElementById('prompt');
         const sendButton = document.getElementById('send-button');
         const searchToggle = document.getElementById('search-toggle');
-        const reasonToggle = document.getElementById('reason-toggle'); // 获取 Reason 按钮
+        const reasonToggle = document.getElementById('reason-toggle'); // Get the Reason button
         const aiResponseDiv = document.getElementById('ai-response');
-        const saveButton = document.getElementById('save-button'); // 获取 Save 按钮
-        const thinkingIcon = document.getElementById('thinking-icon'); // 获取 thinking 图标
+        const saveButton = document.getElementById('save-button'); // Get the Save button
+        const thinkingIcon = document.getElementById('thinking-icon'); // Get the thinking icon
 
-        // 监听文本框的 keydown 事件
+        // Listen for the keydown event of the text box
         textarea.addEventListener('keydown', function (event) {
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
@@ -65,15 +65,15 @@
             }
         });
 
-        // 建立WebSocket连接
+        // Establish a WebSocket connection
         const socket = new WebSocket('ws://localhost:8765');
 
         socket.addEventListener('open', (event) => {
-            console.log('WebSocket connection established');  // 新增日志记录
+            console.log('WebSocket connection established'); // New log record
         });
-    
+
         socket.addEventListener('message', (event) => {
-            console.log('Received message:', event.data);  // 新增日志记录
+            console.log('Received message:', event.data); // New log record
             if (event.data === "start") {
                 thinkingIcon.style.display = "block";
             } else if (event.data === "end") {
@@ -82,10 +82,10 @@
         });
     
         socket.addEventListener('error', (event) => {
-            console.error('WebSocket error:', event);  // 新增错误处理
+            console.error('WebSocket error:', event);  // New error handling
         });
 
-        // 发送查询的函数
+        // Function to send query
         async function sendQuery() {
             const prompt = document.getElementById('prompt').value;
             const selectedModel = document.getElementById('model-select').value;
@@ -94,9 +94,9 @@
                 return;
             }
 
-            let web_context = "";  // 初始化 web_context
+            let web_context = "";  // Initialize web_context
 
-            // 根据 search on/off 按钮的状态，设置 web_context 的值
+            // Set the value of web_context based on the search on/off button state
             if (isSearchOn) {
                 try {
                     const searchResponse = await fetch('/web_search', {
@@ -117,7 +117,7 @@
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ prompt, context, model: selectedModel, search_toggle: isSearchOn }),  // 确保传递 isSearchOn 的值
+                    body: JSON.stringify({ prompt, context, model: selectedModel, search_toggle: isSearchOn }),  // Ensure passing the value of isSearchOn
                 });
         
                 const result = await response.json();
@@ -134,7 +134,7 @@
                     const thinkingStartIndex = aiResponseText.indexOf('<think>');
                     const thinkingEndIndex = aiResponseText.indexOf('</think>');
                     if (thinkingStartIndex !== -1 && thinkingEndIndex !== -1) {
-                        // 仅当 Reason 按钮被按下时，才输出 ThinkingText
+                        // Only output ThinkingText when Reason button is pressed
                         if (isReasonOn) {
                             const aiThinking = document.createElement('div');
                             aiThinking.classList.add('ai-thinking');
@@ -162,7 +162,7 @@
             }
         }
 
-        // 开始新聊天的函数
+        // Function to start a new chat
         async function newChat() {
             try {
                 const response = await fetch('/new-chat', {
@@ -181,7 +181,7 @@
             }
         }
 
-        // 新增 load chat 函数
+        // New load chat function
         async function loadChat() {
             const input = document.createElement('input');
             input.type = 'file';
@@ -205,16 +205,16 @@
                                 aiResponseDiv.innerHTML = '';
                                 data.forEach(message => {
                                     const div = document.createElement('div');
-                                    // 将消息对象转换为格式化的 JSON 字符串
+                                    // Convert message object to formatted JSON string
                                     const jsonText = JSON.stringify(message, null, 2);
-                                    // 使用 <pre> 标签包裹 JSON 文本
+                                    // Wrap JSON text in <pre> tag
                                     const pre = document.createElement('pre');
                                     pre.textContent = jsonText;
-                                    // 设置字体大小，这里设置为 16px，你可以根据需要调整
+                                    // Set font size, here it's set to 16px, you can adjust as needed
                                     pre.style.fontSize = '16px'; 
-                                    // 设置 white-space 属性为 pre-wrap, 允许换行
+                                    // Set white-space to pre-wrap, allowing line breaks
                                     pre.style.whiteSpace = 'pre-wrap'; 
-                                    // 设置 word-wrap 属性为 break-word，强制长单词换行
+                                    // Set word-wrap to break-word, forcing long words to wrap
                                     pre.style.wordWrap = 'break-word'; 
                                     div.appendChild(pre);
                                     aiResponseDiv.appendChild(div);
@@ -231,7 +231,7 @@
         }
 
 
-        // 新增函数，用于切换 search on/off 按钮的状态
+        // New function to toggle the search on/off button state
         function toggleSearch() {
             isSearchOn = !isSearchOn;
             if (isSearchOn) {
@@ -243,7 +243,7 @@
             }
         }
 
-        // 新增函数，用于切换 reason on/off 按钮的状态
+        // New function to toggle the reason on/off button state
         function toggleReason() {
             isReasonOn = !isReasonOn;
             if (isReasonOn) {
@@ -255,7 +255,7 @@
             }
         }
 
-        // 新增函数，用于保存 all_messages 为 JSON 文件
+        // New function to save all messages as a JSON file
         async function saveMessages() {
             try {
                 const response = await fetch('/get-all-messages', {
@@ -277,30 +277,31 @@
                 console.error('Error saving messages:', error);
             }
         }
-        // 新增函数，用于将 ai_response 中的内容以 Markdown 格式保存
+        // New function to save ai_response content as Markdown
         async function saveAsMarkdown() {
             const aiResponseDiv = document.getElementById('ai-response');
             const aiResponseText = aiResponseDiv.innerHTML;
 
-            // 创建 TurndownService 实例                                         
+            // Create TurndownService instance                                         
             const turndownService = new TurndownService();
-            // 将 HTML 转换为 Markdown
+            // Convert HTML to Markdown
             const markdownText = turndownService.turndown(aiResponseText);
         
-            // 创建一个 Blob 对象，将内容保存为 Markdown 文件
+            // Create a Blob object to save content as a Markdown file
             const blob = new Blob([markdownText], { type: 'text/markdown' });
             const url = URL.createObjectURL(blob);
     
-            // 创建一个 <a> 元素，用于触发下载
+            // Create an <a> element to trigger the download
             const a = document.createElement('a');
             a.href = url;
             a.download = 'ai_response.md';
             a.click();
     
-            // 释放 URL 对象
+            // Revoke the URL object
             URL.revokeObjectURL(url);
         }
     </script>
 </body>
 
 </html>
+
