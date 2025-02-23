@@ -89,6 +89,23 @@ select {
     margin-left: 5px;
 }
 
+#local-remote-toggle {
+    position: relative;
+    float: left;
+    bottom: 5px;
+    margin-left: 5px;
+}
+
+#local-remote-toggle.on {
+    background-color: lightgreen;
+    border-radius: 4px; /* 你可以根据需要调整圆角的大小，值越大圆角越明显 */
+}
+
+#local-remote-toggle.off {
+    background-color: white;
+    border-radius: 4px; /* 你可以根据需要调整圆角的大小，值越大圆角越明显 */
+}
+
 #model-select {
     float: right;
     margin-top: 10px;

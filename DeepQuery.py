@@ -76,15 +76,31 @@ async def index():
 async def query(request: Request):
     data = await request.json()
     user_input = data.get('prompt').strip()
-    logger.info(f"Received User message: {user_input}")
     if not isinstance(user_input, (str, bytes)):
         logger.error(f"Unexpected data type for user_input: {type(user_input)}")
         return JSONResponse(content={"error": "Invalid user_input data type"}, status_code=400)
+    else:
+        # Add the user message to the conversation history
+        all_messages.append({"role": "user", "content": user_input})
+        logger.info(f"all_messages: {all_messages}")
+    
+#   is_remote = data.get('isRemote')
+    is_remote = True
+    is_remote = False
+    logger.info(f"Received User message: {user_input}")
+    if is_remote:
+        # Here you can add code to access the remote model via SSH
+        logger.info('Accessing remote model via SSH')
+    else:
+        # Here you can add code to access the local model directly
+        print('Accessing local model directly')
+        logger.info('Accessing local model directly')
 
-    selected_model = data.get('model', 'deepseek-r1:32b')
+
+    selected_model = data.get('model', 'deepseek-r1:7b')
     logger.info(f"Use {selected_model} LLM model")
 
-    is_search_on = data.get('search_toggle', False)  # Change the default value to False
+    is_search_on = data.get('search_toggle', False)  
     web_context = ""  # Default value when search is off
 
     # If search is on, call the web_search function
@@ -97,20 +113,17 @@ async def query(request: Request):
             return JSONResponse(content={"error": "Invalid web_context data type"}, status_code=400)
 
     try:
-        # Establish an SSH connection
-        ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        ssh.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER, password=SSH_PASSWORD)
-
-        # Add the user message to the conversation history
-        all_messages.append({"role": "user", "content": user_input})
-        logger.info(f"all_messages: {all_messages}")
+        if is_remote:
+           # Establish an SSH connection
+           ssh = paramiko.SSHClient()
+           ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+           ssh.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER, password=SSH_PASSWORD)
 
         # Build the prompt
-        prompt = f"""[System Instruction] You are an AI assistant. The current date is {datetime.now().strftime('%Y-%m-%d')} 
-The following is a real-time information snippet from the web (may be incomplete): {web_context} [User Question] {user_input} """
+        prompt = f"""[System Instruction] You are an AI assistant. The current date is {datetime.now().strftime('%Y-%m-%d')}.
+        The following is a real-time information snippet from the web (may be incomplete): {web_context} [User Question] {user_input} """
         print(f"prompt: {prompt}")
-
+    
         # Build the request data
         data = {
             "model": selected_model,
@@ -123,48 +136,72 @@ The following is a real-time information snippet from the web (may be incomplete
             "best_of": 3,
             "history": all_messages
         }
-        data_json = json.dumps(data)
-        print(data_json)
-        command = [
-            "curl",
-            "-s",
-            "-X", "POST",
-            "http://localhost:11434/api/generate",
-            "-H", "Content-Type: application/json",
-            "-d", shlex.quote(data_json)
-        ]
-        logger.info("ssh exec_command: " + ' '.join(command))
+        data_json = json.dumps(data, ensure_ascii=False)
+        if is_remote:
+            command = [
+                "curl",
+                "-s",
+                "-X", "POST",
+                "http://localhost:11434/api/generate",
+                "-H", "Content-Type: application/json",
+                "-d", shlex.quote(data_json)
+            ]
+            logger.info("ssh exec_command: " + ' '.join(command))
+    
+            # Notify the front end to start executing the command
+            for client in connected_clients:
+                try:
+                   await client.send("start")
+                   logger.info("Sent 'start' message to client")  # New log record
+                except Exception as e:
+                   logger.error(f"Failed to send 'start' message: {e}")
 
-        # Notify the front end to start executing the command
-        for client in connected_clients:
+        if is_remote:
+            # Execute the command on SSH
+            stdin, stdout, stderr = ssh.exec_command(' '.join(command))
+        
+            # Get the execution result
+            response = stdout.read().decode()
+            error = stderr.read().decode()
+        
+            ssh.close()
+            if '{"error":"unexpected EOF"}' in response:
+                logger.error(f"SSH command error: {response}")
+                return JSONResponse(content={"error": response}, status_code=500)
+            if error:
+                logger.error(f"SSH command error: {error}")
+                return JSONResponse(content={"error": error}, status_code=500)
+        
             try:
-               await client.send("start")
-               logger.info("Sent 'start' message to client")  # New log record
-            except Exception as e:
-               logger.error(f"Failed to send 'start' message: {e}")
-
-        # Execute the command on SSH
-        stdin, stdout, stderr = ssh.exec_command(' '.join(command))
-
-        # Get the execution result
-        response = stdout.read().decode()
-        error = stderr.read().decode()
-
-        ssh.close()
-        if '{"error":"unexpected EOF"}' in response:
-            logger.error(f"SSH command error: {response}")
-            return JSONResponse(content={"error": response}, status_code=500)
-        if error:
-            logger.error(f"SSH command error: {error}")
-            return JSONResponse(content={"error": error}, status_code=500)
-
-        try:
-            response_json = json.loads(response)
-            generated_response = response_json.get("response", "")
-
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON decode error: {e}")
-            return JSONResponse(content={"error": f"JSON decode error: {e}"}, status_code=500)
+                response_json = json.loads(response)
+                generated_response = response_json.get("response", "")
+        
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error: {e}")
+                return JSONResponse(content={"error": f"JSON decode error: {e}"}, status_code=500)
+    
+        else:
+            # Execute the command locally
+            # Send the request directly to the local server
+            logger.info(f"request  "+"http://localhost:11434/api/generate "+data_json)
+            response = requests.post(
+                "http://localhost:11434/api/generate",
+                data=data_json
+            )
+            response.raise_for_status()
+    
+            response_text = response.text
+            if '{"error":"unexpected EOF"}' in response_text:
+                logger.error(f"HTTP request error: {response_text}")
+                return JSONResponse(content={"error": response_text}, status_code=500)
+    
+            try:
+                response_json = json.loads(response_text)
+                generated_response = response_json.get("response", "")
+    
+            except json.JSONDecodeError as e:
+                logger.error(f"JSON decode error: {e}")
+                return JSONResponse(content={"error": f"JSON decode error: {e}"}, status_code=500)
 
         # Parse the <think> tag
         parts = re.split(r'(<think>.*?</think>)', generated_response, flags=re.IGNORECASE | re.DOTALL)
@@ -179,13 +216,13 @@ The following is a real-time information snippet from the web (may be incomplete
         # Update the context
         all_messages.append({"role": "system", "content": ai_response})
         formatted_messages = json.dumps(all_messages, indent=4, ensure_ascii=False)
-
+    
         # Notify the front end that the command execution is complete
         for client in connected_clients:
             await client.send("end")
-
+    
         return JSONResponse(content={"response": generated_response})
-
+    
     except Exception as e:
         logger.error(f"An exception occurred: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
@@ -287,6 +324,19 @@ async def main():
         server = uvicorn.Server(config)
         await server.serve()
         await ws_server_task
+
+@app.post("/toggle-local-remote")
+async def toggle_local_remote(request: Request):
+    data = await request.json()
+    is_remote = data.get('isRemote')
+    if is_remote:
+        # Here you can add code to access the remote model via SSH
+        logger.info('Accessing remote model via SSH')
+    else:
+        # Here you can add code to access the local model directly
+        print('Accessing local model directly')
+        logger.info('Accessing local model directly')
+    return JSONResponse(content={"status": "success"})
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -16,6 +16,8 @@
         <button id="new-chat-button" onclick="newChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">New Chat</button>
         <!-- New load chat button -->
         <button id="load-chat-button" onclick="loadChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Load Chat</button>
+        <!-- New local/remote toggle button -->
+        <button id="local-remote-toggle" class="off" onclick="toggleLocalRemote()">Local</button>
         <select id="model-select">
             <option value="deepseek-r1:latest">deepseek-r1:7b</option>
             <option value="deepseek-r1:32b" selected>deepseek-r1:32b</option>
@@ -49,6 +51,7 @@
         let context = "";
         let isSearchOn = false; // New variable to record the state of the search on/off button
         let isReasonOn = false; // New variable to record the state of the reason on/off button
+        let isRemote = false; // New variable to record the state of the toggle-remote/local button
         const textarea = document.getElementById('prompt');
         const sendButton = document.getElementById('send-button');
         const searchToggle = document.getElementById('search-toggle');
@@ -230,6 +233,29 @@
             input.click();
         }
 
+        // New function to toggle the local/remote button state
+        async function toggleLocalRemote() {
+            const toggleButton = document.getElementById('local-remote-toggle');
+            isRemote = !isRemote; // 切换isRemote的值
+            toggleButton.classList.toggle('off');
+            toggleButton.textContent = isRemote ? 'Remote' : 'Local';
+           
+            // 发送请求到后端
+            const response = await fetch('/toggle-local-remote', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ isRemote: isRemote })
+            });
+           
+            const data = await response.json();
+            if (data.status === 'success') {
+                console.log('Local/Remote mode toggled successfully');
+            } else {
+                console.error('Failed to toggle local/remote mode');
+            }
+        }
 
         // New function to toggle the search on/off button state
         function toggleSearch() {
