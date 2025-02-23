@@ -95,7 +95,6 @@ async def query(request: Request):
         print('Accessing local model directly')
         logger.info('Accessing local model directly')
 
-
     selected_model = data.get('model', 'deepseek-r1:7b')
     logger.info(f"Use {selected_model} LLM model")
 
@@ -112,6 +111,14 @@ async def query(request: Request):
             return JSONResponse(content={"error": "Invalid web_context data type"}, status_code=400)
 
     try:
+        # Notify the front end to start executing the command
+        for client in connected_clients:
+            try:
+                await client.send("start")
+                logger.info("[Message Sent]: 'start' message to client")  # New log record
+            except Exception as e:
+                logger.error(f"Failed to send 'start' message: {e}")
+
         if is_remote:
            # Establish an SSH connection
            ssh = paramiko.SSHClient()
@@ -147,15 +154,6 @@ async def query(request: Request):
             ]
             logger.info("[Remote SSH]: " + ' '.join(command))
     
-            # Notify the front end to start executing the command
-            for client in connected_clients:
-                try:
-                   await client.send("start")
-                   logger.info("[Message Sent]: 'start' message to client")  # New log record
-                except Exception as e:
-                   logger.error(f"Failed to send 'start' message: {e}")
-
-        if is_remote:
             # Execute the command on SSH
             stdin, stdout, stderr = ssh.exec_command(' '.join(command))
         
@@ -187,14 +185,6 @@ async def query(request: Request):
                 data=data_json
             )
             response.raise_for_status()
-
-            # Notify the front end to start executing the command
-            for client in connected_clients:
-                try:
-                   await client.send("start")
-                   logger.info("[Message Sent]: 'start' message to client")  # New log record
-                except Exception as e:
-                   logger.error(f"Failed to send 'start' message: {e}")
    
             response_text = response.text
             if '{"error":"unexpected EOF"}' in response_text:
