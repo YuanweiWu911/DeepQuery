@@ -18,9 +18,9 @@ input, button {
 
 #ai-response {
     border: 1px solid #444;
-    padding: 10px;
-    margin-top: 5px;
-    min-height: 200px; /* 设置最小高度 */
+    padding: 5px;
+    margin-top: 1px;
+    min-height: 300px; /* 设置最小高度 */
     overflow-y: auto; /* 当内容超出高度时显示垂直滚动条 */
     clear: both;
     flex: 1; /* 让该元素自动填充剩余空间 */
@@ -68,7 +68,8 @@ select {
 }
 
 .textarea-container textarea {
-    padding-right: 40px;
+    padding-right: 20px;
+    border: 1px solid #444;
     width: 100%; /* 设置宽度为页面宽度的 80% */
     max-width: 100%; /* 确保不会超出容器宽度 */
     box-sizing: border-box; /* 让内边距和边框包含在宽度内 */
@@ -78,23 +79,24 @@ select {
 #new-chat-button {
     float: right;
     margin-top: 0px;
-    margin-bottom: 2px;
+    margin-bottom: 0px;
     margin-right: 0px;
 }
 
 #load-chat-button {
     float: right;
     margin-top: 0px;
-    margin-bottom: 2px;
+    margin-bottom: 0px;
     margin-right: 0px;
 }
 
 #local-remote-toggle {
     position: relative;
     float: left;
-    bottom: 5px;
+    bottom: 2px;
     left: 0px;
     margin-left: 0px;
+    margin-bottom: 0px;
 }
 
 #local-remote-toggle.on {
@@ -116,6 +118,9 @@ select {
     position: absolute;
     bottom: 40px;
     right: 0px;
+    margin-bottom: 2px;
+    margin-right: 1px;
+    margin-left: 1px;
 }
 
 #save-button {
