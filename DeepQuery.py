@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # Read the configuration file
-with open('~/.deepquery.config', 'r') as f:
+with open('.deepquery.config', 'r') as f:
     config = json.load(f)
 
 # SSH connection parameters
