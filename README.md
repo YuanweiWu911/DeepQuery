@@ -6,11 +6,12 @@ This is a web application that provides an interface for querying the LLM (Large
 
 ## Features
 
+- **Local/Remote**: Local will use local LLM model, Remote to use remote server's LLM model.
 - **Model Selection**: Users can select different LLM models (`deepseek-r1:7b`, `deepseek-r1:32b`, `deepseek-r1:70b`) to use for querying.
-- **Search Function**: There is a search toggle button that can be used to enable or disable the web search function. When enabled, relevant web search results will be included in the prompt sent to the LLM.
-- **New Chat**: Users can start a new chat session, which clears the chat history and the response area.
-- **Speech**: Users can enable or disable the speech function, which may be used to convert text to speech or vice versa depending on the implementation.
+- **Web Search**: There is a search toggle button that can be used to enable or disable the web search function. When enabled, relevant web search results will be included in the prompt sent to the LLM.
 - **Reasoning**: There is a reasoning toggle button that can be used to enable or disable the reasoning feature. This could potentially be used to get more detailed and logical explanations from the LLM.
+- **Text Speech**: Users can enable or disable the speech function, which may be used to convert text to speech or vice versa depending on the implementation.
+- **New Chat**: Users can start a new chat session, which clears the chat history and the response area.
 - **Load Chat**: Users can load a previously saved chat session from a JSON file.
 - **Save Chat**: Users can save the chat content in two formats:
   - **JSON**: The chat messages are saved in a JSON file, which can be used to store the conversation history in a structured format.
@@ -18,11 +19,13 @@ This is a web application that provides an interface for querying the LLM (Large
 
 ## Prerequisites
 
-- Python 3.10.11: The application is built using Python 3 and the Flask framework.
-- Flask
+- Python 3.10: The application is built using Python 3 and the fastapi framework.
+- fastapi
 - paramiko
 - requests
-
+- pyinstaller
+- uvicorn
+- websockets
 You also need to set the following environment variables:
 
 - `SERPER_API_KEY`: API key for the `google.serper` API, which is used for web search.
@@ -76,10 +79,17 @@ pyinstaller --add-data "templates;templates" --add-data "static;static" --add-da
 
 
 2. In the web interface:
+   - Select local or remote LLM model you want to use.
    - Select the LLM model you want to use from the dropdown menu.
+   - Toggle the "Search" button to enable or disable the web search function.
+   - Toggle the "Reason" button to show the thinking process of AI.
+   - Toggle the "Speech" button to speech on/off AI's response.
    - Enter your question in the textarea and press Enter or click the "Enter" button to send the query.
    - You can click the "New Chat" button to start a new chat session.
-   - Toggle the "Search" button to enable or disable the web search function.
+   - You can click the "Load Chat" button to load json format historical chat session.
+   - You can click the "Json" button to save the dialogs as a historical chat seesion for future use.
+   - You can click the "Markdown" button to save the dialogs as a Markdown file.
+
 
 ## File Structure
 
