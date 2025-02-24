@@ -145,6 +145,7 @@ select {
     float: left;
     bottom: 5px;
     margin-left: 0px;
+    margin-right: 5px;
 }
 
 
@@ -188,4 +189,22 @@ select {
 .button-clicked {
     background-color: #ccc;
     box-shadow: inset 0 0 5px rgba(0, 0, 0, 0.3);
+}
+
+#speech-button {
+    position: relative;
+    float: left;
+    bottom: 5px;
+    margin-left: 0px;
+    margin-right: 5px;
+}
+
+#speech-button.on {
+    background-color: lightgreen;
+    border-radius: 4px;
+}
+
+#speech-button.off {
+    background-color: white;
+    border-radius: 4px;
 }
