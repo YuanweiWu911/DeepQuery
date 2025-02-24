@@ -267,7 +267,7 @@ def web_search(prompt):
             response = requests.post(
                 "https://google.serper.dev/search",
                 headers=headers,
-                json={"q": prompt, "num": 5},
+                json={"q": prompt, "num": 20},
                 proxies=proxies
             )
         else:
