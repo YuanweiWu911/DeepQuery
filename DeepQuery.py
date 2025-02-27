@@ -1,4 +1,7 @@
+###################################################################
 import os
+import sys
+import io
 from datetime import datetime
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
@@ -11,9 +14,56 @@ import requests
 import shlex
 import webbrowser
 import asyncio
+import uvicorn
+from asyncio import Queue, create_task
 import websockets
 
 ###################################################################
+class StdoutLogger:
+    def write(self, message):
+        if message.strip():
+            logger.info(message.strip())
+    
+    def flush(self):
+        pass
+
+    def isatty(self):
+        return False
+
+sys.stdout = StdoutLogger()
+
+class WebSocketLogHandler(logging.Handler):
+    def __init__(self, log_queue):
+        # 先调用父类的构造函数，传递默认的日志级别
+        super().__init__(level=logging.NOTSET)
+        self.log_queue = log_queue
+
+    def emit(self, record):
+        log_message = self.format(record)
+        asyncio.run_coroutine_threadsafe(log_queue.put(log_message), asyncio.get_event_loop())
+
+async def handle_ws(websocket, path=None):
+    connected_clients.add(websocket)
+    try:
+        async for message in websocket:
+            pass
+    except websockets.exceptions.ConnectionClosed:
+        pass
+    finally:
+        connected_clients.remove(websocket)
+
+# 创建自定义日志处理器实例
+log_queue = Queue()
+ws_handler = WebSocketLogHandler(log_queue)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+ws_handler.setFormatter(formatter)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+logger.addHandler(ws_handler)
+
 # Get the directory where the current script is located
 base_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -26,11 +76,6 @@ app = FastAPI()
 
 # Mount the static file directory
 app.mount("/static", StaticFiles(directory=static_folder), name="static")  # New mount
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 # Read the configuration file
 with open('.deepquery.config', 'r') as f:
@@ -48,16 +93,26 @@ is_remote = False
 # Used to store the conversation history
 all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
 
-# Store WebSocket connections
+# 定义一个全局的WebSocket连接集合
 connected_clients = set()
 
-# WebSocket handler function
-async def handle_ws(websocket, path=None):
-    connected_clients.add(websocket)
-    try:
-        await websocket.wait_closed()
-    finally:
-        connected_clients.remove(websocket)
+from asyncio import Queue, create_task
+
+log_queue = Queue()
+
+# 修改log_consumer协程，增加去重逻辑
+# 保持现有的log_consumer实现
+async def log_consumer():
+    last_message = None
+    while True:
+        message = await log_queue.get()
+        if message != last_message:
+            for client in connected_clients.copy():
+                try:
+                    await client.send(message)
+                except:
+                    connected_clients.remove(client)
+            last_message = message
 
 # Asynchronous function to start the WebSocket server
 async def start_ws_server():
@@ -80,23 +135,16 @@ async def query(request: Request):
     data = await request.json()
     user_input = data.get('prompt').strip()
     if not isinstance(user_input, (str, bytes)):
-        logger.error(f"Unexpected data type for user_input: {type(user_input)}")
+        logger.error(f"[System] Unexpected data type for user_input: {type(user_input)}")
         return JSONResponse(content={"error": "Invalid user_input data type"}, status_code=400)
     else:
         # Add the user message to the conversation history
         all_messages.append({"role": "user", "content": user_input})
     
     logger.info(f"[User Message]: {user_input}")
-    if is_remote:
-        # Here you can add code to access the remote model via SSH
-        logger.info('Accessing remote model via SSH')
-    else:
-        # Here you can add code to access the local model directly
-        print('Accessing local model directly')
-        logger.info('Accessing local model directly')
 
     selected_model = data.get('model', 'deepseek-r1:7b')
-    logger.info(f"Use {selected_model} LLM model")
+    logger.info(f"[System] use {selected_model} LLM model")
 
     is_search_on = data.get('search_toggle', False)  
     web_context = ""  # Default value when search is off
@@ -107,23 +155,30 @@ async def query(request: Request):
         web_context = web_search(user_input)
         logger.info(f"[Search result]: {web_context}")
         if not isinstance(web_context, (str, bytes)):
-            logger.error(f"Unexpected data type for web_context: {type(web_context)}")
+            logger.error(f"[System] Unexpected data type for web_context: {type(web_context)}")
             return JSONResponse(content={"error": "Invalid web_context data type"}, status_code=400)
 
     try:
         # Notify the front end to start executing the command
         for client in connected_clients:
             try:
-                await client.send("start")
-                logger.info("[Message Sent]: 'start' message to client")  # New log record
+                await client.send(datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]+" - __main__ - INFO - "+"[front end] start query")
+                logger.info("[System]: send message to client")  # New log record
             except Exception as e:
-                logger.error(f"Failed to send 'start' message: {e}")
+                logger.error(f"[System] Failed to send 'start' message: {e}")
 
         if is_remote:
            # Establish an SSH connection
-           ssh = paramiko.SSHClient()
-           ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-           ssh.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER, password=SSH_PASSWORD)
+           try:
+              ssh = paramiko.SSHClient()                                                                  
+              ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+              ssh.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER, password=SSH_PASSWORD)
+           except paramiko.AuthenticationException:
+              logger.error("[System] SSH authentication failed.")
+              return JSONResponse(content={"error": "SSH authentication failed"}, status_code=500)
+           except paramiko.SSHException as ssh_ex:
+              logger.error(f"[System] SSH connection error: {ssh_ex}")
+              return JSONResponse(content={"error": f"SSH connection error: {ssh_ex}"}, status_code=500)
 
         # Build the prompt
         prompt = f"""[System Instruction] You are an AI assistant. The current date is {datetime.now().strftime('%Y-%m-%d')}.
@@ -163,10 +218,10 @@ async def query(request: Request):
         
             ssh.close()
             if '{"error":"unexpected EOF"}' in response:
-                logger.error(f"SSH command error: {response}")
+                logger.error(f"[System] SSH command error: {response}")
                 return JSONResponse(content={"error": response}, status_code=500)
             if error:
-                logger.error(f"SSH command error: {error}")
+                logger.error(f"[System] SSH command error: {error}")
                 return JSONResponse(content={"error": error}, status_code=500)
         
             try:
@@ -174,7 +229,7 @@ async def query(request: Request):
                 generated_response = response_json.get("response", "")
         
             except json.JSONDecodeError as e:
-                logger.error(f"JSON decode error: {e}")
+                logger.error(f"[System] JSON decode error: {e}")
                 return JSONResponse(content={"error": f"JSON decode error: {e}"}, status_code=500)
     
         else:
@@ -188,7 +243,7 @@ async def query(request: Request):
    
             response_text = response.text
             if '{"error":"unexpected EOF"}' in response_text:
-                logger.error(f"HTTP request error: {response_text}")
+                logger.error(f"[System] HTTP request error: {response_text}")
                 return JSONResponse(content={"error": response_text}, status_code=500)
     
             try:
@@ -196,7 +251,7 @@ async def query(request: Request):
                 generated_response = response_json.get("response", "")
     
             except json.JSONDecodeError as e:
-                logger.error(f"JSON decode error: {e}")
+                logger.error(f"[System] JSON decode error: {e}")
                 return JSONResponse(content={"error": f"JSON decode error: {e}"}, status_code=500)
 
         # Parse the <think> tag
@@ -214,12 +269,12 @@ async def query(request: Request):
     
         # Notify the front end that the command execution is complete
         for client in connected_clients:
-            await client.send("end")
+            await client.send(datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]+" - __main__ - INFO - "+"[front end] query end")
     
         return JSONResponse(content={"response": generated_response})
     
     except Exception as e:
-        logger.error(f"An exception occurred: {e}")
+        logger.error(f"[System] An exception occurred: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 @app.post("/new-chat")
@@ -245,13 +300,20 @@ async def handle_web_search(request: Request):
     search_result = web_search(prompt)
     return JSONResponse(content={"web_context": search_result})
 
+@app.post("/save-markdown")
+async def save_markdown(request: Request):
+    # 这里可以添加更多逻辑，比如保存markdown文件等
+    # 目前只需要输出日志信息
+    print('"POST /save-markdown HTTP/1.1" 200 OK')
+    return JSONResponse(content={"status": "success"})
+
 def web_search(prompt):
     """
     Execute a web search synchronously and return a list of the top 10 search result contents using the google.serper API.
     """
     api_key = os.getenv("SERPER_API_KEY")
     if api_key is None:
-        logger.error("SERPER_API_KEY 未设置")
+        logger.error("[System] SERPER_API_KEY 未设置")
         return "未找到搜索结果"
     headers = {
         "X-API-KEY": api_key,
@@ -288,13 +350,13 @@ def web_search(prompt):
         else:
             return "find no searching result"
     except requests.RequestException as e:
-        logger.error(f"RequestException: {e}")
+        logger.error(f"[System] RequestException: {e}")
         return f"RequestException: {str(e)}"
     except ValueError as e:
-        logger.error(f"JSON error: {e}")
+        logger.error(f"[System] JSON error: {e}")
         return f"JSON error: {str(e)}"
     except Exception as e:
-        logger.error(f"Unknown error: {e}")
+        logger.error(f"[System] Unknown error: {e}")
         return f"unknown error: {str(e)}"
 
 @app.get("/get-all-messages")
@@ -302,35 +364,33 @@ async def get_all_messages():
     global all_messages
     return JSONResponse(content=all_messages)
 
-async def main():
-    # Check if SERPER_API_KEY is set
-    if os.getenv("SERPER_API_KEY") is None:
-        logger.error("SERPER_API_KEY is not set. Please set this environment variable before running the program.")
-    else:
-        webbrowser.open('http://localhost:8000/')
-
-        # Start the WebSocket server
-        ws_server_task = asyncio.create_task(start_ws_server())
-
-        # Start the FastAPI application
-        import uvicorn
-        config = uvicorn.Config(app, host='0.0.0.0', port=8000)
-        server = uvicorn.Server(config)
-        await server.serve()
-        await ws_server_task
-
 @app.post("/toggle-local-remote")
 async def toggle_local_remote(request: Request):
     global is_remote
     data = await request.json()
     is_remote = data.get('isRemote')
     if is_remote:
-        # Here you can add code to access the remote model via SSH
         logger.info('[Access] remote model via SSH')
     else:
-        # Here you can add code to access the local model directly
         logger.info('[Access] local model directly')
     return JSONResponse(content={"status": "success"})
 
+async def main():
+    #sys.stdout = StdoutLogger()
+    
+    if os.getenv("SERPER_API_KEY") is None:
+        logger.error("[System] SERPER_API_KEY is not set.")
+    else:
+        webbrowser.open('http://localhost:8000/')
+
+    consumer_task = asyncio.create_task(log_consumer())
+    
+    async with websockets.serve(handle_ws, "localhost", 8765) as server:
+        config = uvicorn.Config(app, host='0.0.0.0', port=8000)
+        server = uvicorn.Server(config)
+        await server.serve()
+        await consumer_task
+
 if __name__ == "__main__":
     asyncio.run(main())
+

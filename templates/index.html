@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Query Interface</title>
     <link rel="stylesheet" href="static/styles.css">
-    <script src="https://unpkg.com/turndown@7.1.1/dist/turndown.js"></script>
+    <script src="https://unpkg.com/turndown@7.1.1/dist/turndown.js" onerror="alert('Failed to load turndown.js')"></script>
 </head>
 
 <body>
@@ -50,16 +50,23 @@
         <img src="static/thinking.gif" alt="Thinking...">
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Terminal button and output window -->
+    <button id="terminal-button" onclick="toggleTerminal()">Terminal</button>
+    <div id="terminal-output" style="display: none; height: 200px; overflow-y: auto; background: black; color: white; padding: 10px; font-family: monospace;"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" onerror="alert('Failed to load marked.min.js')"></script>
     <script>
         let context = "";
         let isSearchOn = false; 
         let isReasonOn = false; 
         let isRemote = false; 
         let isSpeechOn = false;
-        const speechButton = document.getElementById('speech-button');
         let synthesis = window.speechSynthesis;
         let utterance = null; 
+        let isTerminalVisible = false;
+	let ws = null;
+
+        const speechButton = document.getElementById('speech-button');
         const textarea = document.getElementById('prompt');
         const sendButton = document.getElementById('send-button');
         const searchToggle = document.getElementById('search-toggle');
@@ -67,6 +74,42 @@
         const aiResponseDiv = document.getElementById('ai-response');
         const saveButton = document.getElementById('save-button'); // Get the Save button
         const thinkingIcon = document.getElementById('thinking-icon'); // Get the thinking icon
+
+        // Establish a WebSocket connection
+        //const socket = new WebSocket('ws://localhost:8765');
+
+	function toggleTerminal() {
+            const terminalOutput = document.getElementById('terminal-output');
+            isTerminalVisible = !isTerminalVisible;
+            terminalOutput.style.display = isTerminalVisible ? 'block' : 'none';
+            
+            // 当终端可见时，自动滚动到底部
+            if (isTerminalVisible) {
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+            }
+        }
+
+        // 添加全局唯一的WebSocket连接
+        let socket = null;
+
+        // 修改DOMContentLoaded监听器为：
+        document.addEventListener('DOMContentLoaded', () => {
+            socket = new WebSocket('ws://localhost:8765');
+            
+            socket.addEventListener('message', (event) => {
+                const terminalOutput = document.getElementById('terminal-output');
+                const newLine = document.createElement('p');
+                newLine.textContent = event.data;
+                terminalOutput.appendChild(newLine);
+                
+                // 自动滚动到底部
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+            });
+        
+            socket.addEventListener('error', (event) => {
+                console.error('WebSocket error:', event);
+            });
+        });
 
         // Listen for the keydown event of the text box
         textarea.addEventListener('keydown', function (event) {
@@ -76,22 +119,18 @@
             }
         });
 
-        // Establish a WebSocket connection
-        const socket = new WebSocket('ws://localhost:8765');
-
         socket.addEventListener('open', (event) => {
             console.log('WebSocket connection established'); // 
         });
 
         socket.addEventListener('message', (event) => {
-            console.log('Received message:', event.data); // 
-            if (event.data === "start") {
-                thinkingIcon.style.display = "block";
-            } else if (event.data === "end") {
-                thinkingIcon.style.display = "none";
-            }
+            const terminalOutput = document.getElementById('terminal-output');
+            // 创建一个新的段落元素，将接收到的消息添加到终端输出中
+            const newLine = document.createElement('p');
+            newLine.textContent = event.data;
+            terminalOutput.appendChild(newLine);
         });
-    
+
         socket.addEventListener('error', (event) => {
             console.error('WebSocket error:', event);  // 
         });
@@ -346,6 +385,23 @@
     
             // Revoke the URL object
             URL.revokeObjectURL(url);
+
+            try {
+                // 发送请求到服务器端记录日志
+                const response = await fetch('/save-markdown', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+            } catch (error) {
+                console.error('Error sending request:', error);
+            }
         }
 
         // 添加语音切换函数
