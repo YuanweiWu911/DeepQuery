@@ -52,7 +52,11 @@
 
     <!-- Terminal button and output window -->
     <button id="terminal-button" onclick="toggleTerminal()">Terminal</button>
-    <div id="terminal-output" style="display: none; height: 200px; overflow-y: auto; background: black; color: white; padding: 10px; font-family: monospace;"></div>
+    <div id="terminal-output" style="display: none; height: 200px; overflow-y: auto; background: black; color: white; padding: 10px; font-family: monospace;">
+    </div>
+    <!-- GPUbutton -->
+    <button id="gpu-button" onclick="toggleGPUInfo()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">GPU</button>
+    <div id="gpu-info" style="display: none; height: 200px; overflow-y: auto; background: black; color: white; padding: 10px; font-family: monospace; margin-top: 5px;"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" onerror="alert('Failed to load marked.min.js')"></script>
     <script>
@@ -65,6 +69,7 @@
         let utterance = null; 
         let isTerminalVisible = false;
 	let ws = null;
+        let isGPUInfoVisible = false;
 
         const speechButton = document.getElementById('speech-button');
         const textarea = document.getElementById('prompt');
@@ -445,6 +450,40 @@
                 synthesis.cancel();
             }
         }
+
+        
+        function toggleGPUInfo() {
+            const gpuInfoDiv = document.getElementById('gpu-info');
+            isGPUInfoVisible = !isGPUInfoVisible;
+            
+            if (isGPUInfoVisible) {
+                getGPUInfo();
+                gpuInfoDiv.style.display = 'block';
+            } else {
+                gpuInfoDiv.style.display = 'none';
+            }
+        }
+        
+        async function getGPUInfo() {
+            const gpuInfoDiv = document.getElementById('gpu-info');
+            
+            try {
+                const response = await fetch('/get-gpu-info');
+                const data = await response.json();
+                
+                if(data.status === 'success') {
+                    gpuInfoDiv.innerHTML = `<pre>${data.data}</pre>`;
+                } else {
+                    gpuInfoDiv.innerHTML = `Error: ${data.message}`;
+                }
+                
+                // 自动滚动到底部
+                gpuInfoDiv.scrollTop = gpuInfoDiv.scrollHeight;
+            } catch (error) {
+                gpuInfoDiv.innerHTML = `Request failed: ${error}`;
+            }
+        }
+        
     </script>
 </body>
 

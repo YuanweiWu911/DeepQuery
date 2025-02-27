@@ -16,6 +16,7 @@ import webbrowser
 import asyncio
 import uvicorn
 from asyncio import Queue, create_task
+import pynvml
 import websockets
 
 ###################################################################
@@ -374,6 +375,47 @@ async def toggle_local_remote(request: Request):
     else:
         logger.info('[Access] local model directly')
     return JSONResponse(content={"status": "success"})
+
+@app.get("/get-gpu-info")
+async def get_gpu_info():
+    global is_remote
+    try:
+        if is_remote:
+            # 远程服务器获取GPU信息
+            ssh = paramiko.SSHClient()
+            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            ssh.connect(SSH_HOST, port=SSH_PORT, username=SSH_USER, password=SSH_PASSWORD)
+            
+            stdin, stdout, stderr = ssh.exec_command('nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv')
+            output = stdout.read().decode()
+            error = stderr.read().decode()
+            ssh.close()
+            
+            if error:
+                return {"status": "error", "message": f"Remote error: {error}"}
+            return {"status": "success", "data": output}
+        else:
+            # 本地获取GPU信息
+            pynvml.nvmlInit()
+            device_count = pynvml.nvmlDeviceGetCount()
+            info = []
+            
+            for i in range(device_count):
+                handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+                util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+                mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+                
+                info.append(
+                    f"GPU {i}: "
+                    f"Utilization {util.gpu}%, "
+                    f"Memory {mem.used//1024**2}MB/{mem.total//1024**2}MB"
+                )
+            
+            pynvml.nvmlShutdown()
+            return {"status": "success", "data": "\n".join(info)}
+            
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 async def main():
     #sys.stdout = StdoutLogger()
