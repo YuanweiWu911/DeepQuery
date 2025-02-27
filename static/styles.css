@@ -272,8 +272,6 @@ select {
     color: white;
     font-family: monospace;
 }
-    margin-top: 10px;
-}
 
 #terminal-output {
     border: 1px solid #444;

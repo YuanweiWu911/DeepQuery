@@ -56,7 +56,7 @@
     </div>
     <!-- GPUbutton -->
     <button id="gpu-button" onclick="toggleGPUInfo()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">GPU</button>
-    <div id="gpu-info" style="display: none; height: 200px; overflow-y: auto; background: black; color: white; padding: 10px; font-family: monospace; margin-top: 5px;"></div>
+    <div id="gpu-info" style="display: none; height: 80px; overflow-y: auto; background: black; color: white; padding: 10px; font-family: monospace; margin-top: 5px;"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" onerror="alert('Failed to load marked.min.js')"></script>
     <script>
@@ -149,6 +149,10 @@
                 return;
             }
 
+            // Show the thinking icon
+            const thinkingIcon = document.getElementById('thinking-icon');
+            thinkingIcon.style.display = 'block';
+
             let web_context = "";  // Initialize web_context
 
             // Set the value of web_context based on the search on/off button state
@@ -217,6 +221,11 @@
                 }
             } catch (error) {
                 console.error('Error sending query:', error);
+            }
+
+            finally {
+            // Hide the thinking icon after the response is received
+            thinkingIcon.style.display = 'none';
             }
         }
 
