@@ -73,7 +73,7 @@ You also need to set the following environment variables:
 
 ## Windows system compile to exe file
 ```powershell
-pyinstaller --add-data "templates;templates" --add-data "static;static" --add-data "icon.ico;." --onefile --name DeepQuery --icon=icon.ico DeepQuery.py
+pyinstaller build.spec
 ```
    This will compile the python scripts into a DeepQuery.exe file.
 
