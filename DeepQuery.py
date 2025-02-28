@@ -1,38 +1,86 @@
+"""
+DeepSeek-R1 Query Backend System
+
+This module implements the core backend services for the LLM Query Interface,
+providing the following key capabilities:
+
+1. WebSocket-based real-time terminal output
+2. REST API endpoints for chat operations
+3. SSH-managed remote execution
+4. GPU resource monitoring
+5. Conversation context management
+6. Integrated web search functionality
+
+Architecture Components:
+- WebSocketHandler: Manages real-time client communication
+- APIRouterHandler: Configures and manages all API endpoints
+- ChatHandler: Implements chat-specific business logic
+- WebSocketLogHandler: Custom logging system for WebSocket
+
+Dependencies:
+- FastAPI (REST API framework)
+- WebSockets (Real-time communication)
+- Paramiko (SSH client)
+- Uvicorn (ASGI server)
+"""
+
 import os
 import sys
 import io
+import json
+import re
+import shlex
 import logging
 import paramiko
 import requests
-import json
 import asyncio
 import uvicorn
 import subprocess
-import re
-import shlex
-import webbrowser
 import websockets
+import webbrowser
 import pystray
-import threading
 import signal
-from PIL import Image, ImageDraw
+import threading
+from asyncio import Queue, create_task
 from datetime import datetime
 from fastapi import FastAPI, Request
-from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-from asyncio import Queue, create_task
-########################################################################
+from fastapi.templating import Jinja2Templates
+from logging.handlers import QueueHandler
+from PIL import Image
+
 tray_icon = None
 server_task = None
-# 处理WebSocket相关逻辑的类
+
+#region WebSocket Handler
 class WebSocketHandler:
+    """Manages WebSocket connections and log distribution.
+    
+    Implements pub-sub pattern for real-time log streaming to connected clients.
+    
+    Attributes:
+        log_queue (Queue): Buffer for log messages
+        connected_clients (set): Active WebSocket connections
+    """
+
     def __init__(self):
+        """Initializes WebSocket handler with empty client set and log queue."""
         self.log_queue = Queue()
         self.connected_clients = set()
 
     async def handle_ws(self, websocket, path=None):
-        # 处理WebSocket连接的逻辑
+        """Main WebSocket connection handler.
+        
+        Args:
+            websocket (websockets.WebSocketServerProtocol): Client connection object
+            path (Optional[str]): Request path (unused)
+            
+        Flow:
+            1. Adds client to connected set
+            2. Continuously sends queued logs
+            3. Handles graceful disconnect
+        """
         self.connected_clients.add(websocket)
         try:
             while True:
@@ -60,27 +108,48 @@ class WebSocketHandler:
     async def start_ws_server(self):
         server = await websockets.serve(self.handle_ws, "localhost", 8765)
         await server.wait_closed()
+#endregion
 
-# 处理FastAPI路由的类
+#region APIRouterHandler
 class APIRouterHandler:
+    """Configures and manages all FastAPI routes.
+    
+    Attributes:
+        app (FastAPI): FastAPI application instance
+        logger (logging.Logger): Configured logger instance
+        chat_handler (ChatHandler): Chat operation handler
+        config (dict): Application configuration
+        is_remote (bool): Current execution mode flag
+    """
+
     def __init__(self, app, logger, chat_handler, ws_handler):
+        """Initializes router with dependencies.
+        
+        Args:
+            app (FastAPI): Main app instance
+            logger (logging.Logger): Shared logger
+            chat_handler (ChatHandler): Chat operations handler
+            ws_handler (WebSocketHandler): WebSocket manager
+        """
         self.app = app
         self.logger = logger
         self.chat_handler = chat_handler
-        self.ws_hander = ws_handler
-        # 读取配置文件
+        self.ws_handler = ws_handler
+        self.is_remote = True
+        self.all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
+        self._load_config()
+
+    def _load_config(self):
+        """Loads SSH configuration from .deepquery.config file."""
         with open('.deepquery.config', 'r') as f:
             self.config = json.load(f)
-        # SSH连接参数
         self.SSH_HOST = self.config.get('SSH_HOST')
-        self.SSH_PORT = self.config.get('SSH_PORT')
+        self.SSH_PORT = self.config.get('SSH_PORT', 22)
         self.SSH_USER = self.config.get('SSH_USER')
         self.SSH_PASSWORD = self.config.get('SSH_PASSWORD')
-        # 其他初始化逻辑
-        self.is_remote = False
-        self.all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
 
     def setup_routes(self):
+        """Configures all API endpoints."""
         @self.app.get("/favicon.ico")
         async def favicon():
             # 处理favicon.ico的逻辑
@@ -92,6 +161,20 @@ class APIRouterHandler:
 
         @self.app.post("/query")
         async def query(request: Request):
+            """Handles LLM query requests.
+            
+            Flow:
+                1. Validates input
+                2. Performs web search (if enabled)
+                3. Constructs LLM prompt
+                4. Executes locally or via SSH
+                5. Returns formatted response
+                
+            Raises:
+                HTTP 400: Invalid input format
+                HTTP 500: Execution failure
+            """
+
             # 处理查询的逻辑
             data = await request.json()
             user_input = data.get('prompt').strip()
@@ -295,7 +378,19 @@ class APIRouterHandler:
 
         @self.app.get("/get-gpu-info")
         async def get_gpu_info():
-            # 处理获取GPU信息的逻辑
+            """Retrieves GPU utilization metrics.
+            
+            Behavior:
+                - Local mode: Executes nvidia-smi directly
+                - Remote mode: Executes via SSH connection
+                
+            Returns:
+                JSON: {
+                    'status': 'success'|'error',
+                    'data': str|None,
+                    'message': str|None
+                }
+            """
             try:
                 if self.is_remote:
                     # 远程服务器获取GPU信息
@@ -334,17 +429,36 @@ class APIRouterHandler:
                         return {"status": "error", "message": f"An unexpected error occurred: {str(e)}"}                    
             except Exception as e:
                 return {"status": "error", "message": str(e)}
+#endregion
 
-
-# 处理聊天相关逻辑的类
+#region Chat Handler
 class ChatHandler:
+    """Implements chat-specific business logic.
+    
+    Attributes:
+        logger (logging.Logger): Configured logger instance
+    """
+ 
     def __init__(self, logger):
         self.logger = logger
 
-    def web_search(self, prompt):
+    def web_search(self, prompt: str) -> str:
+        """Performs web search using Google Serper API.
+        
+        Args:
+            prompt (str): Search query text
+            
+        Returns:
+            str: Formatted results or error message
+            
+        Raises:
+            requests.RequestException: On network failures
+            ValueError: On invalid API response
+            
+        Note:
+            Requires SERPER_API_KEY environment variable
         """
-        Execute a web search synchronously and return a list of the top 10 search result contents using the google.serper API.
-        """
+
         api_key = os.getenv("SERPER_API_KEY")
         if api_key is None:
             self.logger.error("[System] SERPER_API_KEY 未设置")
@@ -392,8 +506,9 @@ class ChatHandler:
         except Exception as e:
             self.logger.error(f"[System] Unknown error: {e}")
             return f"unknown error: {str(e)}"
+#endregion
 
-
+#region StdoutLogger
 class StdoutLogger:
     def __init__(self, logger):
         # 初始化时传入日志记录器实例
@@ -408,7 +523,9 @@ class StdoutLogger:
 
     def isatty(self):
         return False
+#endregion
 
+#region WebSocketLogHandler
 class WebSocketLogHandler(logging.Handler):
     def __init__(self, log_queue):
         # 先调用父类的构造函数，传递默认的日志级别
@@ -422,9 +539,19 @@ class WebSocketLogHandler(logging.Handler):
             self.log_queue.put_nowait(log_entry)
         except asyncio.QueueFull:
             pass  # 队列满了，忽略这条日志
+#endregion
 
 def create_tray_icon():
-    # 创建托盘图标
+    """Creates system tray icon with menu items.
+    
+    Returns:
+        pystray.Icon: Configured tray icon instance
+        
+    Menu Items:
+        - Open Interface: Launches web interface
+        - Exit: Terminates application
+    """
+
     global tray_icon
     base_dir = os.path.dirname(os.path.abspath(__file__))
     icon_path = os.path.join(base_dir, 'static', 'favicon.ico')  # 修改图标路径
@@ -499,6 +626,17 @@ async def universal_exception_handler(request: Request, exc: Exception):
     )
 
 async def main():
+    """Main application entry point.
+    
+    Execution Flow:
+        1. Initializes logging system
+        2. Starts WebSocket server
+        3. Configures FastAPI routes
+        4. Launches system tray icon
+        5. Opens web interface
+        6. Starts Uvicorn server
+    """
+
     # 启动系统托盘图标（在新线程中）
     tray_thread = threading.Thread(target=run_tray_icon, daemon=True)
     tray_thread.start()
@@ -525,5 +663,8 @@ async def main():
     if tray_icon:
         tray_icon.stop()
 
+#endregion
+
 if __name__ == "__main__":
+    """Application entry point."""
     asyncio.run(main())

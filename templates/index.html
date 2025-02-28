@@ -2,6 +2,24 @@
 <html lang="en">
 
 <head>
+    <!--
+    LLM Query Interface - Frontend Implementation
+    
+    Provides interactive web interface for DeepSeek-R1 language model operations.
+    Core functionalities:
+    - Real-time chat with markdown rendering
+    - Multi-model selection (1.5B to 70B parameters)
+    - Local/Remote execution mode switching
+    - Conversation history management
+    - Integrated web search capabilities
+    - Terminal-like monitoring interface
+    - GPU utilization monitoring
+    
+    Dependencies:
+    - marked.js (Markdown rendering)
+    - turndown (HTML to Markdown conversion)
+    - WebSocket (Real-time communication)
+    -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Query Interface</title>
@@ -27,8 +45,7 @@
         </select>
     </div>
 
-    <div id="ai-response" placeholder="What can I do for you..." contenteditable="true"></div>
-
+    <div id="ai-response" placeholder="What can I do for you..." contenteditable="true" style="display: none;"></div>
     <div class="input-container">
         <div class="textarea-container">
             <textarea id="prompt" rows="6" cols="90" placeholder="Please enter your question and press Enter to send..."></textarea>
@@ -62,6 +79,12 @@
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" onerror="alert('Failed to load marked.min.js')"></script>
     <script>
+        /**
+         * Main WebSocket client initialization
+         * @event DOMContentLoaded
+         * @listens DOMContentLoaded
+         * @description Initializes WebSocket connection and sets up message handlers
+         */
         let context = "";
         let isSearchOn = false; 
         let isReasonOn = false; 
@@ -101,6 +124,7 @@
 
         // 修改DOMContentLoaded监听器为：
         document.addEventListener('DOMContentLoaded', () => {
+            // WebSocket初始化逻辑...
             socket = new WebSocket('ws://localhost:8765');
             
             socket.addEventListener('message', (event) => {
@@ -135,6 +159,20 @@
         });
 
         // Function to send query
+        /**
+         * Handles query submission and response processing
+         * @async
+         * @function sendQuery
+         * @throws {TypeError} If input validation fails
+         * @throws {Error} On network failures or response parsing errors
+         * @example
+         * // Typical usage flow:
+         * // 1. User enters prompt
+         * // 2. System shows thinking indicator
+         * // 3. Processes search context (if enabled)
+         * // 4. Sends request to backend
+         * // 5. Renders formatted response
+         */
         async function sendQuery() {
             const prompt = document.getElementById('prompt').value;
             const selectedModel = document.getElementById('model-select').value;
@@ -142,6 +180,9 @@
                 alert("Prompt cannot be empty!");
                 return;
             }
+
+            // 显示 ai-response 窗口
+            aiResponseDiv.style.display = 'block';
 
             // Show the thinking icon
             const thinkingIcon = document.getElementById('thinking-icon');
@@ -292,6 +333,14 @@
         }
 
         // New function to toggle the local/remote button state
+        /**
+         * Toggles execution mode between local and remote
+         * @async
+         * @function toggleLocalRemote
+         * @emits modeChange Notifies backend of mode change
+         * @see APIRouterHandler.toggle_local_remote
+         */
+
         async function toggleLocalRemote() {
             const toggleButton = document.getElementById('local-remote-toggle');
             isRemote = !isRemote; // 切换isRemote的值
@@ -339,6 +388,15 @@
             }
         }
 
+        /**
+         * URL formatting utility
+         * @function convertUrlsToLinks
+         * @param {string} text - Input text containing raw URLs
+         * @returns {string} Formatted text with Markdown-style links
+         * @example
+         * // Input: "Visit https://example.com"
+         * // Output: "Visit [https://example.com]"
+         */
         function convertUrlsToLinks(text) {
             // 匹配网址的正则表达式
             const urlRegex = /(https?:\/\/[^\s]+)/g;
