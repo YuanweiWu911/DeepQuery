@@ -2,22 +2,22 @@
 import os
 import sys
 import io
+import logging
+import paramiko
+import requests
+import json
+import asyncio
+import uvicorn
+import pynvml
+import re
+import shlex
+import webbrowser
+import websockets
 from datetime import datetime
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
-import json
-import logging
-import paramiko
-import re
-import requests
-import shlex
-import webbrowser
-import asyncio
-import uvicorn
 from asyncio import Queue, create_task
-import pynvml
-import websockets
 
 ###################################################################
 class StdoutLogger:
@@ -97,7 +97,6 @@ all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
 # 定义一个全局的WebSocket连接集合
 connected_clients = set()
 
-from asyncio import Queue, create_task
 
 log_queue = Queue()
 
@@ -425,7 +424,7 @@ async def main():
     else:
         webbrowser.open('http://localhost:8000/')
 
-    consumer_task = asyncio.create_task(log_consumer())
+    consumer_task = create_task(log_consumer())
     
     async with websockets.serve(handle_ws, "localhost", 8765) as server:
         config = uvicorn.Config(app, host='0.0.0.0', port=8000)

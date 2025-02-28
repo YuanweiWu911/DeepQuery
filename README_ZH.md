@@ -50,23 +50,14 @@
        "SSH_PORT": 22,
        "SSH_USER": "your-ssh-username",
        "SSH_PASSWORD": "your-ssh-password"
+       "SERPER_API_KEY":"your-serper-api-key"
    }
    ```
    请将这些值替换为你实际的 SSH 连接信息。如果你使用 SSH 密钥而非密码，可以将 `SSH_PASSWORD` 字段留空。
 
-4. 设置 `SERPER_API_KEY` 环境变量：
-   - 在 Linux 或 macOS 上：
-     ```bash
-     export SERPER_API_KEY=your-api-key
-     ```
-   - 在 Windows 上：
-     ```bash
-     set SERPER_API_KEY=your-api-key
-     ```
-
 ## 使用方法
 
-1. 启动 Flask 应用程序：
+1. 启动 FastAPI 应用程序：
    ```bash
    python DeepQuery.py
    ```
@@ -74,7 +65,7 @@
 
 ## Windows 系统编译为 exe 文件
 ```powershell
-pyinstaller --add-data "templates;templates" --add-data "static;static" --add-data "icon.ico;." --onefile --name DeepQuery --icon=icon.ico DeepQuery.py
+pyinstaller build.spec
 ```
    这将把 Python 脚本编译为一个 DeepQuery.exe 文件。
 
@@ -94,7 +85,7 @@ pyinstaller --add-data "templates;templates" --add-data "static;static" --add-da
 
 - `index.html`：网络界面的主 HTML 文件。
 - `styles.css`：用于设置网络界面样式的 CSS 文件。
-- `DeepQuery.py`：处理后端逻辑的 Python Flask 应用程序。
+- `DeepQuery.py`：处理后端逻辑的 Python FastAPI 应用程序。
 - `requirements.txt`：项目的 Python 依赖项。
 
 ## API 端点

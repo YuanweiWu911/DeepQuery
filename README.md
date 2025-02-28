@@ -49,23 +49,14 @@ You also need to set the following environment variables:
        "SSH_PORT": 22,
        "SSH_USER": "your-ssh-username",
        "SSH_PASSWORD": "your-ssh-password"
+       "SERPER_API_KEY":"your-serper-api-key"
    }
    ```
    Replace the values with your actual SSH connection information. If you are using an SSH key instead of a password, you can leave the `SSH_PASSWORD` field empty.
 
-4. Set the `SERPER_API_KEY` environment variable:
-   - On Linux or macOS:
-     ```bash
-     export SERPER_API_KEY=your-api-key
-     ```
-   - On Windows:
-     ```bash
-     set SERPER_API_KEY=your-api-key
-     ```
-
 ## Usage
 
-1. Start the Flask application:
+1. Start the FastAPI application:
    ```bash
    python DeepQuery.py
    ```
@@ -95,7 +86,7 @@ pyinstaller build.spec
 
 - `index.html`: The main HTML file for the web interface.
 - `styles.css`: The CSS file for styling the web interface.
-- `DeepQuery.py`: The Python Flask application that handles the backend logic.
+- `DeepQuery.py`: The Python FastAPI application that handles the backend logic.
 - `requirements.txt`: Python dependencies for the project.
 
 ## API Endpoints
