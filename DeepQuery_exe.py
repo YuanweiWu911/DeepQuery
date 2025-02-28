@@ -69,20 +69,13 @@ class APIRouterHandler:
         self.logger = logger
         self.chat_handler = chat_handler
         self.ws_hander = ws_handler
-        config = {
-            "SSH_HOST": "192.168.182.124", 
-            "SSH_PORT": "22",
-            "SSH_USER": "ywwu",
-            "SSH_PASSWORD": "wjswyw119",
-            "SERPER_API_KEY": "ebba2f3fd617ab2108b7b66cf41cf5b3a717815a"
-        }
 
         # SSH连接参数
-        self.SSH_HOST = self.config.get('SSH_HOST')
-        self.SSH_PORT = self.config.get('SSH_PORT')
-        self.SSH_USER = self.config.get('SSH_USER')
-        self.SSH_PASSWORD = self.config.get('SSH_PASSWORD')
-        self.SERPER_API_KEY = config.get('SERPER_API_KEY')
+        self.SSH_HOST = chat_handler.SSH_HOST
+        self.SSH_PORT = chat_handler.SSH_PORT
+        self.SSH_USER = chat_handler.SSH_USER
+        self.SSH_PASSWORD = chat_handler.SSH_PASSWORD
+        self.SERPER_API_KEY = chat_handler.SERPER_API_KEY
 
         # 其他初始化逻辑
         self.is_remote = False
@@ -349,14 +342,28 @@ class APIRouterHandler:
 
 # 处理聊天相关逻辑的类
 class ChatHandler:
-    def __init__(self, logger, api_handler):
+    def __init__(self, logger):
         self.logger = logger
+        self.config = {
+            "SSH_HOST": "000.000.000.000", 
+            "SSH_PORT": "22",
+            "SSH_USER": "user",
+            "SSH_PASSWORD": "password",
+            "SERPER_API_KEY": "your_serper_api_key"
+        }
+
+        # SSH连接参数
+        self.SSH_HOST = self.config.get('SSH_HOST')
+        self.SSH_PORT = self.config.get('SSH_PORT')
+        self.SSH_USER = self.config.get('SSH_USER')
+        self.SSH_PASSWORD = self.config.get('SSH_PASSWORD')
+        self.SERPER_API_KEY = self.config.get('SERPER_API_KEY')
 
     def web_search(self, prompt):
         """
         Execute a web search synchronously and return a list of the top 10 search result contents using the google.serper API.
         """
-        api_key = api_handler.SERPER_API_KEY
+        api_key = self.SERPER_API_KEY
         if api_key is None:
             self.logger.error("[System] SERPER_API_KEY 未设置")
             return "未找到搜索结果"
