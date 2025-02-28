@@ -37,6 +37,8 @@
             <button id="save-button" onclick="saveMessages()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Json</button>
             <!-- Save as Markdown button -->
             <button id="markdown-button" onclick="saveAsMarkdown()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Markdown</button>
+	    <!-- New ReadFile button -->
+            <button id="readfile-button" onclick="readFile()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">ReadFile</button>
             <!-- Search on/off button -->
             <button id="search-toggle" class="off" onclick="toggleSearch()">Search</button>
             <!-- Reason button -->
@@ -492,7 +494,26 @@
                 gpuInfoDiv.innerHTML = `Request failed: ${error}`;
             }
         }
-        
+        // New function to read file and update prompt
+        async function readFile() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.txt'; // 仅允许选择文本文件
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = async (event) => {
+                        const fileText = event.target.result;
+                        const promptElement = document.getElementById('prompt');
+                        // 将文件内容添加到prompt中
+                        promptElement.value = `请先阅读以下文件内容：\n${fileText}\n\n然后回答我的问题：`;
+                    };
+                    reader.readAsText(file);
+                }
+            };
+            input.click();
+        }        
     </script>
 </body>
 
