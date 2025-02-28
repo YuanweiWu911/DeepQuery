@@ -12,6 +12,8 @@ import re
 import shlex
 import webbrowser
 import websockets
+#####only for windows
+#import pynvml
 import pystray
 import threading
 import signal
