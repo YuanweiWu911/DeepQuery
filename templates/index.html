@@ -499,7 +499,7 @@
         async function readFile() {
             const input = document.createElement('input');
             input.type = 'file';
-            input.accept = '.txt'; // 仅允许选择文本文件
+            input.accept = '.txt, .json, .py, .md'; // 仅允许选择文本文件
             input.onchange = async (e) => {
                 const file = e.target.files[0];
                 if (file) {
