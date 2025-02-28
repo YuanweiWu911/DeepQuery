@@ -135,7 +135,7 @@ class APIRouterHandler:
         self.logger = logger
         self.chat_handler = chat_handler
         self.ws_handler = ws_handler
-        self.is_remote = True
+        self.is_remote = False 
         self.all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
         self._load_config()
 

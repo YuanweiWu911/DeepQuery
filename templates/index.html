@@ -85,6 +85,7 @@
          * @listens DOMContentLoaded
          * @description Initializes WebSocket connection and sets up message handlers
          */
+	let socket = null;
         let context = "";
         let isSearchOn = false; 
         let isReasonOn = false; 
@@ -95,18 +96,48 @@
         let isTerminalVisible = false;
 	let ws = null;
         let isGPUInfoVisible = false;
-
-        const speechButton = document.getElementById('speech-button');
-        const textarea = document.getElementById('prompt');
-        const sendButton = document.getElementById('send-button');
-        const searchToggle = document.getElementById('search-toggle');
-        const reasonToggle = document.getElementById('reason-toggle'); // Get the Reason button
+	let textarea;
+        
         const aiResponseDiv = document.getElementById('ai-response');
-        const saveButton = document.getElementById('save-button'); // Get the Save button
-        const thinkingIcon = document.getElementById('thinking-icon'); // Get the thinking icon
+        // 修改DOMContentLoaded监听器为：
+        document.addEventListener('DOMContentLoaded', () => {
+            const speechButton = document.getElementById('speech-button');
+            const textarea = document.getElementById('prompt');
+            const sendButton = document.getElementById('send-button');
+            const searchToggle = document.getElementById('search-toggle');
+            const reasonToggle = document.getElementById('reason-toggle'); // Get the Reason button
+            const saveButton = document.getElementById('save-button'); // Get the Save button
+            const thinkingIcon = document.getElementById('thinking-icon'); // Get the thinking icon
+            const terminalOutput = document.getElementById('terminal-output');
 
-        // Establish a WebSocket connection
-        //const socket = new WebSocket('ws://localhost:8765');
+            // WebSocket初始化逻辑...
+            socket = new WebSocket('ws://localhost:8765');
+            
+            socket.addEventListener('message', (event) => {
+                const newLine = document.createElement('p');
+                newLine.textContent = event.data;
+                terminalOutput.appendChild(newLine);
+                
+                // 自动滚动到底部
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+            });
+
+            socket.addEventListener('error', (event) => {
+                console.error('WebSocket error:', event);
+            });
+
+            socket.addEventListener('open', (event) => {
+                console.log('WebSocket connection established');
+            });
+
+            // Listen for the keydown event of the text box
+            textarea.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    sendQuery();
+                }
+            });
+        });
 
 	function toggleTerminal() {
             const terminalOutput = document.getElementById('terminal-output');
@@ -119,46 +150,6 @@
             }
         }
 
-        // 添加全局唯一的WebSocket连接
-        let socket = null;
-
-        // 修改DOMContentLoaded监听器为：
-        document.addEventListener('DOMContentLoaded', () => {
-            // WebSocket初始化逻辑...
-            socket = new WebSocket('ws://localhost:8765');
-            
-            socket.addEventListener('message', (event) => {
-                const terminalOutput = document.getElementById('terminal-output');
-                const newLine = document.createElement('p');
-                newLine.textContent = event.data;
-                terminalOutput.appendChild(newLine);
-                
-                // 自动滚动到底部
-                terminalOutput.scrollTop = terminalOutput.scrollHeight;
-            });
-        
-            socket.addEventListener('error', (event) => {
-                console.error('WebSocket error:', event);
-            });
-        });
-
-        // Listen for the keydown event of the text box
-        textarea.addEventListener('keydown', function (event) {
-            if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                sendQuery();
-            }
-        });
-
-        socket.addEventListener('open', (event) => {
-            console.log('WebSocket connection established'); // 
-        });
-
-        socket.addEventListener('error', (event) => {
-            console.error('WebSocket error:', event);  // 
-        });
-
-        // Function to send query
         /**
          * Handles query submission and response processing
          * @async
@@ -174,8 +165,12 @@
          * // 5. Renders formatted response
          */
         async function sendQuery() {
-            const prompt = document.getElementById('prompt').value;
+            const aiResponseDiv = document.getElementById('ai-response');
+            const textarea = document.getElementById('prompt');
+            const thinkingIcon = document.getElementById('thinking-icon');
             const selectedModel = document.getElementById('model-select').value;
+            const prompt = textarea.value;
+
             if (!prompt.trim()) {
                 alert("Prompt cannot be empty!");
                 return;
@@ -185,7 +180,6 @@
             aiResponseDiv.style.display = 'block';
 
             // Show the thinking icon
-            const thinkingIcon = document.getElementById('thinking-icon');
             thinkingIcon.style.display = 'block';
 
             let web_context = "";  // Initialize web_context
