@@ -7,12 +7,11 @@ import requests
 import json
 import asyncio
 import uvicorn
-import pynvml
+import subprocess
 import re
 import shlex
 import webbrowser
 import websockets
-import asyncssh
 import pystray
 import threading
 import signal
@@ -318,23 +317,22 @@ class APIRouterHandler:
                     return {"status": "success", "data": output}
                 else:
                     # 本地获取GPU信息
-                    pynvml.nvmlInit()
-                    device_count = pynvml.nvmlDeviceGetCount()
-                    info = []
-                    
-                    for i in range(device_count):
-                        handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-                        util = pynvml.nvmlDeviceGetUtilizationRates(handle)
-                        mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
-                        
-                        info.append(
-                            f"GPU {i}: "
-                            f"Utilization {util.gpu}%, "
-                            f"Memory {mem.used//1024**2}MB/{mem.total//1024**2}MB"
-                        )
-                    
-                    pynvml.nvmlShutdown()
-                    return {"status": "success", "data": "\n".join(info)}
+                    try:
+                        # 执行 nvidia-smi 命令
+                        result = subprocess.run(\
+                            ['nvidia-smi', '--query-gpu=utilization.gpu,memory.used,memory.total', '--format=csv'],
+                            capture_output=True, text=True, check=True)
+                        # 获取标准输出
+                        output = result.stdout
+                        return {"status": "success", "data": output}
+
+                    except subprocess.CalledProcessError as e:
+                        # 处理命令执行错误
+                        error = e.stderr
+                        return {"status": "error", "message": f"Remote error: {error}"}
+                    except Exception as e:
+                        # 处理其他异常
+                        return {"status": "error", "message": f"An unexpected error occurred: {str(e)}"}                    
                     
             except Exception as e:
                 return {"status": "error", "message": str(e)}
@@ -441,20 +439,6 @@ class WebSocketLogHandler(logging.Handler):
         except asyncio.QueueFull:
             pass  # 队列满了，忽略这条日志
 
-#def create_tray_icon():
-#   # 创建托盘图标
-#   image = Image.new('RGB', (64, 64), (255, 255, 255))
-#   dc = ImageDraw.Draw(image)
-#   dc.rectangle((16, 16, 48, 48), fill=(0, 128, 0))
-#   
-#   menu = (
-#       pystray.MenuItem('打开界面', lambda: webbrowser.open('http://localhost:8000')),
-#       pystray.MenuItem('退出程序', terminate_app)
-#   )
-#   
-#   icon = pystray.Icon("deepseek_icon", image, "DeepSeek R1", menu)
-#   return icon
-
 def create_tray_icon():
     # 创建托盘图标
     global tray_icon
@@ -465,7 +449,7 @@ def create_tray_icon():
         pystray.MenuItem('打开界面', lambda: webbrowser.open('http://localhost:8000')),
         pystray.MenuItem('退出程序', terminate_app)
     )
-    tray_icon = pystray.Icon("name", image, "title", menu)
+    tray_icon = pystray.Icon("name", image, "DeepQuery", menu)
     tray_icon.run()
     return tray_icon
 
@@ -534,12 +518,11 @@ async def main():
     # 启动系统托盘图标（在新线程中）
     tray_thread = threading.Thread(target=run_tray_icon, daemon=True)
     tray_thread.start()
+    webbrowser.open('http://localhost:8000/')
     api_key = api_handler.SERPER_API_KEY
     # 解除环境变量强制限制
     if api_key is None:
         logger.warning("[System] SERPER_API_KEY is not set. Web search will be disabled.")
-    else:
-        webbrowser.open('http://localhost:8000/')
 
     config = uvicorn.Config(app, host="0.0.0.0", port=8000)
     server = uvicorn.Server(config)

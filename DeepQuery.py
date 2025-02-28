@@ -424,30 +424,30 @@ class WebSocketLogHandler(logging.Handler):
             pass  # 队列满了，忽略这条日志
 
 def create_tray_icon():
-   # 创建托盘图标
-   global tray_icon
-   base_dir = os.path.dirname(os.path.abspath(__file__))
-   icon_path = os.path.join(base_dir, 'static', 'favicon.ico')  # 修改图标路径
-   image = Image.open(icon_path)
-   menu = pystray.Menu(
-       pystray.MenuItem('打开界面', lambda: webbrowser.open('http://localhost:8000')),
-       pystray.MenuItem('退出程序', terminate_app)
-   )
-   tray_icon = pystray.Icon("name", image, "title", menu)
-   tray_icon.run()
-   return tray_icon
+    # 创建托盘图标
+    global tray_icon
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    icon_path = os.path.join(base_dir, 'static', 'favicon.ico')  # 修改图标路径
+    image = Image.open(icon_path)
+    menu = pystray.Menu(
+        pystray.MenuItem('打开界面', lambda: webbrowser.open('http://localhost:8000')),
+        pystray.MenuItem('退出程序', terminate_app)
+    )
+    tray_icon = pystray.Icon("name", image, "DeepQuery", menu)
+    tray_icon.run()
+    return tray_icon
 
 def terminate_app():
-   global tray_icon
-   # 终止程序
-   os.kill(os.getpid(), signal.CTRL_C_EVENT)
-   if tray_icon:
-       tray_icon.stop()
+    global tray_icon
+    # 终止程序
+    os.kill(os.getpid(), signal.CTRL_C_EVENT)
+    if tray_icon:
+        tray_icon.stop()
 
 def run_tray_icon():
-   global tray_icon
-   tray_icon = create_tray_icon()
-   tray_icon.run()
+    global tray_icon
+    tray_icon = create_tray_icon()
+    tray_icon.run()
 
 # 创建FastAPI应用实例
 app = FastAPI()
@@ -503,11 +503,10 @@ async def main():
     tray_thread = threading.Thread(target=run_tray_icon, daemon=True)
     tray_thread.start()
 
+    webbrowser.open('http://localhost:8000/')
     # 解除环境变量强制限制
     if os.getenv("SERPER_API_KEY") is None:
         logger.warning("[System] SERPER_API_KEY is not set. Web search will be disabled.")
-    else:
-        webbrowser.open('http://localhost:8000/')
 
     config = uvicorn.Config(app, host="0.0.0.0", port=8000)
     server = uvicorn.Server(config)
