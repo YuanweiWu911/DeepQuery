@@ -81,11 +81,11 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory=static_folder), name="static")  # New mount
 
 config = {
-    "SSH_HOST": "192.168.182.124", 
+    "SSH_HOST": "000.000.000.000", 
     "SSH_PORT": "22",
-    "SSH_USER": "ywwu",
-    "SSH_PASSWORD": "wjswyw119",
-    "SERPER_API_KEY": "ebba2f3fd617ab2108b7b66cf41cf5b3a717815a"
+    "SSH_USER": "user",
+    "SSH_PASSWORD": "user_pass",
+    "SERPER_API_KEY": "your_serper_api_key"
 }
 
 # SSH connection parameters
@@ -104,7 +104,6 @@ all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
 # 定义一个全局的WebSocket连接集合
 connected_clients = set()
 
-from asyncio import Queue, create_task
 
 log_queue = Queue()
 
@@ -432,7 +431,7 @@ async def main():
     else:
         webbrowser.open('http://localhost:8000/')
 
-    consumer_task = asyncio.create_task(log_consumer())
+    consumer_task = create_task(log_consumer())
     
     async with websockets.serve(handle_ws, "localhost", 8765) as server:
         config = uvicorn.Config(app, host='0.0.0.0', port=8000)
