@@ -71,13 +71,10 @@
 
     <!-- Terminal button and output window -->
     <button id="terminal-button" onclick="toggleTerminal()">Terminal</button>
-    <div id="terminal-output" style="display: none; height: 200px; overflow-y: auto; background: black; color: white; padding: 10px; font-family: monospace;">
-    </div>
     <!-- GPUbutton -->
     <button id="gpu-button" onclick="getGPUInfo()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">GPU</button>
-    <!--
-    <div id="gpu-info" style="display: none; height: 80px; overflow-y: auto; background: black; color: white; padding: 10px; font-family: monospace; margin-top: 5px;"></div>
-    -->
+    <div id="terminal-output" style="display: none; height: 200px; overflow-y: auto; background: black; color: white; padding: 10px; font-family: monospace;">
+    </div>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" onerror="alert('Failed to load marked.min.js')"></script>
     <script>
         /**
@@ -131,6 +128,11 @@
                 console.log('WebSocket connection established');
             });
 
+            socket.addEventListener('close', () => {
+                isSocketActive = false;
+                console.log('WebSocket connection closed');
+            });
+
             // Listen for the keydown event of the text box
             textarea.addEventListener('keydown', function (event) {
                 if (event.key === 'Enter' && !event.shiftKey) {
@@ -151,21 +153,9 @@
             }
         }
 
-        /**
-         * Handles query submission and response processing
-         * @async
-         * @function sendQuery
-         * @throws {TypeError} If input validation fails
-         * @throws {Error} On network failures or response parsing errors
-         * @example
-         * // Typical usage flow:
-         * // 1. User enters prompt
-         * // 2. System shows thinking indicator
-         * // 3. Processes search context (if enabled)
-         * // 4. Sends request to backend
-         * // 5. Renders formatted response
-         */
+        // Handles query submission and response processing
         async function sendQuery() {
+            const controller = new AbortController();
             const aiResponseDiv = document.getElementById('ai-response');
             const textarea = document.getElementById('prompt');
             const thinkingIcon = document.getElementById('thinking-icon');
@@ -207,6 +197,7 @@
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({ prompt, context, model: selectedModel, search_toggle: isSearchOn }),  // Ensure passing the value of isSearchOn
+                    signal: controller.signal
                 });
         
                 const result = await response.json();
@@ -254,6 +245,7 @@
             }
 
             finally {
+            controller.abort();
             // Hide the thinking icon after the response is received
             thinkingIcon.style.display = 'none';
             }
@@ -468,6 +460,9 @@
 
         // 添加语音切换函数
         function toggleSpeech() {
+            if (synthesis.speaking) {
+                synthesis.cancel();
+            }
             isSpeechOn = !isSpeechOn;
             if (isSpeechOn) {
                 speechButton.classList.remove('off');
@@ -510,20 +505,32 @@
 
         async function getGPUInfo() {
             try {
-                const response = await fetch('/get-gpu-info');
+                // 如果终端窗口隐藏，则强制显示
+                if (!isTerminalVisible) {
+                    toggleTerminal(); // 切换终端可见状态
+                }
+                
+                const controller = new AbortController();
+                const response = await fetch('/get-gpu-info', {
+                    signal: controller.signal
+                });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
                 const data = await response.json();
                 const terminalOutput = document.getElementById('terminal-output');
                 
+                // 检查终端是否仍然可见
+                if (!isTerminalVisible) return;
+        
                 const timestamp = new Date().toLocaleTimeString();
                 const gpuHeader = document.createElement('p');
                 gpuHeader.innerHTML = `<span style="color: #00ff00;">${timestamp} [GPU监控]</span>`;
                 terminalOutput.appendChild(gpuHeader);
         
                 if (data.status === 'success') {
-                    const infoLines = data.data.split('\n');
-                    infoLines.forEach(line => {
+                    data.data.split('\n').forEach(line => {
                         const p = document.createElement('p');
-			p.style.color = '#00ff00';
+                        p.style.color = '#00ff00';
                         p.style.margin = '2px 0';
                         p.textContent = line;
                         terminalOutput.appendChild(p);
@@ -537,7 +544,10 @@
                 
                 terminalOutput.scrollTop = terminalOutput.scrollHeight;
             } catch (error) {
-                console.error('获取GPU信息失败:', error);
+                // 捕获并静默处理已取消的请求
+                if (error.name !== 'AbortError') {
+                    console.error('获取GPU信息失败:', error);
+                }
             }
         }
 
