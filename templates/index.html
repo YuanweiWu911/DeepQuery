@@ -87,7 +87,6 @@
 	let socket = null;
         let context = "";
         let isRemote = false; 
-        let synthesis = window.speechSynthesis;
         let utterance = null; 
         let isTerminalVisible = false;
 	let ws = null;
@@ -95,7 +94,8 @@
 	let textarea;
         let isSearchOn; 
         let isReasonOn; 
-        let isSpeechOn;
+	let isSpeechOn = false;
+	let audioElement = null;
         
         const aiResponseDiv = document.getElementById('ai-response');
 
@@ -484,10 +484,9 @@
 
         // 添加语音切换函数
         function toggleSpeech() {
-            if (synthesis.speaking) {
-                synthesis.cancel();
-            }
             isSpeechOn = !isSpeechOn;
+            const speechButton = document.getElementById('speech-button');
+            
             if (isSpeechOn) {
                 speechButton.classList.remove('off');
                 speechButton.classList.add('on');
@@ -499,34 +498,49 @@
             }
         }
         
-        // 提取AI响应文本并播放
-        function speakCurrentResponse() {
+        async function speakCurrentResponse() {
             const aiResponses = document.querySelectorAll('.ai-response-normal');
             if (!aiResponses.length) return;
-        
-            // 获取最后一个AI响应并去除HTML标签
+            
             const lastResponse = aiResponses[aiResponses.length - 1];
             const text = new DOMParser().parseFromString(lastResponse.innerHTML, "text/html").body.textContent;
         
-            if (synthesis.speaking) synthesis.cancel();
-        
-            utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = 'zh-CN'; // 中文语音
-            utterance.onend = () => {
-                speechButton.classList.remove('on');
-                speechButton.classList.add('off');
-                isSpeechOn = false;
-            };
-            synthesis.speak(utterance);
-        }
-        
-        // 停止语音
-        function stopSpeech() {
-            if (synthesis.speaking) {
-                synthesis.cancel();
+            try {
+                const response = await fetch('/synthesize-speech', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ text: text })
+                });
+                
+                if (!response.ok) throw new Error('合成失败');
+                
+                if (audioElement) {
+                    audioElement.pause();
+                }
+                
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                audioElement = new Audio(audioUrl);
+                audioElement.play();
+                
+                audioElement.onended = () => {
+                    isSpeechOn = false;
+                    speechButton.classList.remove('on');
+                    speechButton.classList.add('off');
+                };
+                
+            } catch (error) {
+                console.error('语音播放失败:', error);
+                alert('语音合成失败，请检查控制台');
             }
         }
-
+        
+        function stopSpeech() {
+            if (audioElement) {
+                audioElement.pause();
+                audioElement.currentTime = 0;
+            }
+        }
         async function getGPUInfo() {
             try {
                 // 如果终端窗口隐藏，则强制显示

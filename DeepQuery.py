@@ -27,6 +27,7 @@ Dependencies:
 import os
 import sys
 import io
+from io import BytesIO
 import json
 import re
 import shlex
@@ -41,12 +42,14 @@ import webbrowser
 import pystray
 import signal
 import threading
+import edge_tts
 from asyncio import Queue, create_task
 from datetime import datetime
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.responses import StreamingResponse
 from logging.handlers import QueueHandler
 from PIL import Image
 
@@ -487,6 +490,32 @@ class APIRouterHandler:
                         return {"status": "error", "message": f"An unexpected error occurred: {str(e)}"}                    
             except Exception as e:
                 return {"status": "error", "message": str(e)}
+
+        @app.post("/synthesize-speech")
+        async def synthesize_speech(request: Request):
+            data = await request.json()
+            text = data.get('text')
+            
+            try:
+                communicate = edge_tts.Communicate(text, "zh-CN-YunxiNeural")
+                audio_stream = BytesIO()
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        audio_stream.write(chunk["data"])
+                audio_stream.seek(0)
+                
+                return StreamingResponse(
+                    iter([audio_stream.getvalue()]),
+                    media_type="audio/mpeg"
+                )
+                
+            except Exception as e:
+                logger.error(f"语音合成失败: {str(e)}")
+                return JSONResponse(
+                    content={"error": "语音合成失败"},
+                    status_code=500
+                )
+
 #endregion
 
 #region Chat Handler
