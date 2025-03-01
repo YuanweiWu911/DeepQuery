@@ -261,8 +261,11 @@
                         aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(convertedText)}`;
                         aiResponseDiv.appendChild(aiNormalResponse);
                     }
-        
                     context = result.context;
+                    // 新增：如果语音按钮处于激活状态则自动播放
+                    if (isSpeechOn) {
+                        await speakCurrentResponse();
+                    }
                 }
             } catch (error) {
                 console.error('Error sending query:', error);
@@ -503,6 +506,7 @@
             if (!aiResponses.length) return;
             
             const lastResponse = aiResponses[aiResponses.length - 1];
+
             const text = new DOMParser().parseFromString(lastResponse.innerHTML, "text/html").body.textContent;
         
             try {

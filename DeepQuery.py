@@ -495,9 +495,18 @@ class APIRouterHandler:
         async def synthesize_speech(request: Request):
             data = await request.json()
             text = data.get('text')
-            
+            voice = data.get('voice',"zh-CN-YunyangNeural" )
+            rate = "+20%"
+            pitch = "+20Hz"
             try:
-                communicate = edge_tts.Communicate(text, "zh-CN-YunxiNeural")
+                """
+                "zh-CN-YunxiNeural"    # 青年男声（默认）
+                "zh-CN-YunyangNeural"   # 新闻男声
+                "zh-CN-XiaoxiaoNeural"  # 年轻女声（多情感）
+                "zh-CN-XiaoyiNeural"    # 少女音
+                "zh-CN-YunjianNeural"   # 成熟男声
+                """
+                communicate = edge_tts.Communicate(text,voice)
                 audio_stream = BytesIO()
                 async for chunk in communicate.stream():
                     if chunk["type"] == "audio":
