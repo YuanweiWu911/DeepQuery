@@ -361,15 +361,47 @@ class APIRouterHandler:
         @self.app.post("/new-chat")
         async def new_chat():
             # 处理新建聊天的逻辑
-            self.all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
-            return JSONResponse(content={"status": "success"})
+            self.all_messages = [
+                {"role": "system", "content": "You are a helpful assistant"}
+            ]
+            self.logger.info("[System] new chat, history cleared!")
+            return JSONResponse(content={"status": "success", "message": "chat init."},
+                                status_code=200
+            )
 
         @self.app.post("/load-chat")
         async def load_chat(request: Request):
-            # 处理加载聊天的逻辑
-            data = await request.json()
-            self.all_messages = data
-            return JSONResponse(content=self.all_messages)
+            try:
+                data = await request.json()
+                
+                # 验证数据格式
+                if not isinstance(data, list):
+                    raise ValueError("无效的对话格式：必须为消息列表")
+                    
+                for msg in data:
+                    if "role" not in msg or "content" not in msg:
+                        raise ValueError("消息缺少必要字段：role 或 content")
+                    if msg["role"] not in ("system", "user"):
+                        raise ValueError(f"非法角色类型：{msg['role']}")
+                
+                # 加载合法数据
+                self.all_messages = data
+                self.logger.info(f"[System] 已加载 {len(data)} 条历史消息")
+                return JSONResponse(
+                    content=self.all_messages,
+                    status_code=200
+                )
+                
+            except json.JSONDecodeError:
+                return JSONResponse(
+                    content={"error": "无效的JSON格式"},
+                    status_code=400
+                )
+            except ValueError as ve:
+                return JSONResponse(
+                    content={"error": str(ve)},
+                    status_code=400
+                )
 
         @self.app.post("/web_search")
         async def handle_web_search(request: Request):
