@@ -9,6 +9,10 @@ body {
     text-align: center;
 }
 
+.hidden {
+    display: none;
+}
+
 input, button {
     padding: 5px;
     margin: 5px;
@@ -297,3 +301,22 @@ select {
     margin-top: 10px;
     white-space: pre-wrap;
 }
+
+/* 终端输出容器 */
+.terminal-output {
+    display: none;
+    height: 200px;
+    overflow-y: auto;
+    background: black;
+    color: white;
+    padding: 10px;
+    font-family: monospace;
+  }
+  
+  /* 可选的响应式设计 */
+  @media (max-width: 768px) {
+    .terminal-output {
+      height: 150px;
+      padding: 8px;
+    }
+  }

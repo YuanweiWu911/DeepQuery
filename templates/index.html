@@ -37,6 +37,7 @@
         <button id="new-chat-button" onclick="newChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">New Chat</button>
         <!-- local/remote toggle button -->
         <button id="local-remote-toggle" class="off" onclick="toggleLocalRemote()">Local</button>
+        <label for="model-select" class="model-select-label"></label>
         <select id="model-select">
             <option value="deepseek-r1:1.5b">deepseek-r1:1.5b</option>
             <option value="deepseek-r1:7b">deepseek-r1:7b</option>
@@ -45,7 +46,7 @@
         </select>
     </div>
 
-    <div id="ai-response" placeholder="What can I do for you..." contenteditable="true" style="display: none;"></div>
+    <div id="ai-response" contenteditable="true" class="hidden"></div>
     <div class="input-container">
         <div class="textarea-container">
             <textarea id="prompt" rows="6" cols="90" placeholder="Please enter your question and press Enter to send..."></textarea>
@@ -65,7 +66,7 @@
     </div>
 
     <!-- Thinking icon -->
-    <div id="thinking-icon" style="display: none;">
+    <div id="thinking-icon" class="hidden">
         <img src="static/thinking.gif" alt="Thinking...">
     </div>
 
@@ -73,8 +74,7 @@
     <button id="terminal-button" onclick="toggleTerminal()">Terminal</button>
     <!-- GPUbutton -->
     <button id="gpu-button" onclick="getGPUInfo()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">GPU</button>
-    <div id="terminal-output" style="display: none; height: 200px; overflow-y: auto; background: black; color: white; padding: 10px; font-family: monospace;">
-    </div>
+    <div id="terminal-output" class="terminal-output"></div>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" onerror="alert('Failed to load marked.min.js')"></script>
     <script>
         /**
@@ -97,12 +97,40 @@
         let isSpeechOn;
         
         const aiResponseDiv = document.getElementById('ai-response');
-        // 修改DOMContentLoaded监听器为：
+
+	// 替换可能存在的 DOMSubtreeModified 监听
+        function setupMutationObservers() {
+          // 监控聊天窗口更新
+          const chatObserver = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+              if (mutation.addedNodes.length) {
+                // 自动滚动到底部
+                const terminalOutput = document.getElementById('terminal-output');
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+              }
+            });
+          });
+        
+          chatObserver.observe(document.getElementById('ai-response'), {
+            childList: true,
+            subtree: true
+          });
+        
+          // 监控终端输出更新
+          const terminalObserver = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+              if (mutation.addedNodes.length) {
+                // 处理终端更新逻辑
+              }
+            });
+          });
+         }
+        // 修改DOMContentLoaded监听器
         document.addEventListener('DOMContentLoaded', () => {
+	    setupMutationObservers();
             const textarea = document.getElementById('prompt');
             const sendButton = document.getElementById('send-button');
             const saveButton = document.getElementById('save-button'); 
-            const thinkingIcon = document.getElementById('thinking-icon'); 
             const terminalOutput = document.getElementById('terminal-output');
             searchToggle = document.getElementById('search-toggle');
             reasonToggle = document.getElementById('reason-toggle'); 
@@ -149,6 +177,7 @@
             
             // 当终端可见时，自动滚动到底部
             if (isTerminalVisible) {
+                document.getElementById('terminal-output').classList.add('terminal-output--visible');
                 terminalOutput.scrollTop = terminalOutput.scrollHeight;
             }
         }
@@ -156,9 +185,9 @@
         // Handles query submission and response processing
         async function sendQuery() {
             const controller = new AbortController();
-            const aiResponseDiv = document.getElementById('ai-response');
+            const aiResponseDiv = document.getElementById('ai-response').classList.remove('hidden');
             const textarea = document.getElementById('prompt');
-            const thinkingIcon = document.getElementById('thinking-icon');
+            const thinkingIcon = document.getElementById('thinking-icon').classList.remove('hidden');
             const selectedModel = document.getElementById('model-select').value;
             const prompt = textarea.value;
 
@@ -166,12 +195,6 @@
                 alert("Prompt cannot be empty!");
                 return;
             }
-
-            // 显示 ai-response 窗口
-            aiResponseDiv.style.display = 'block';
-
-            // Show the thinking icon
-            thinkingIcon.style.display = 'block';
 
             let web_context = "";  // Initialize web_context
 
@@ -247,7 +270,7 @@
             finally {
             controller.abort();
             // Hide the thinking icon after the response is received
-            thinkingIcon.style.display = 'none';
+            document.getElementById('thinking-icon').classList.add('hidden');
             }
         }
 
@@ -262,7 +285,7 @@
                 });
                 if (response.ok) {
                     context = "";
-                    const aiResponseDiv = document.getElementById('ai-response');
+                    document.getElementById('ai-response').classList.add('hidden');
                     aiResponseDiv.innerHTML = '';
                 }
             } catch (error) {
