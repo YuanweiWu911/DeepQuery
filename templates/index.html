@@ -74,9 +74,10 @@
     <div id="terminal-output" style="display: none; height: 200px; overflow-y: auto; background: black; color: white; padding: 10px; font-family: monospace;">
     </div>
     <!-- GPUbutton -->
-    <button id="gpu-button" onclick="toggleGPUInfo()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">GPU</button>
+    <button id="gpu-button" onclick="getGPUInfo()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">GPU</button>
+    <!--
     <div id="gpu-info" style="display: none; height: 80px; overflow-y: auto; background: black; color: white; padding: 10px; font-family: monospace; margin-top: 5px;"></div>
-
+    -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" onerror="alert('Failed to load marked.min.js')"></script>
     <script>
         /**
@@ -507,36 +508,36 @@
             }
         }
 
-        
-        function toggleGPUInfo() {
-            const gpuInfoDiv = document.getElementById('gpu-info');
-            isGPUInfoVisible = !isGPUInfoVisible;
-            
-            if (isGPUInfoVisible) {
-                getGPUInfo();
-                gpuInfoDiv.style.display = 'block';
-            } else {
-                gpuInfoDiv.style.display = 'none';
-            }
-        }
-        
         async function getGPUInfo() {
-            const gpuInfoDiv = document.getElementById('gpu-info');
-            
             try {
                 const response = await fetch('/get-gpu-info');
                 const data = await response.json();
+                const terminalOutput = document.getElementById('terminal-output');
                 
-                if(data.status === 'success') {
-                    gpuInfoDiv.innerHTML = `<pre>${data.data}</pre>`;
+                const timestamp = new Date().toLocaleTimeString();
+                const gpuHeader = document.createElement('p');
+                gpuHeader.innerHTML = `<span style="color: #00ff00;">${timestamp} [GPU监控]</span>`;
+                terminalOutput.appendChild(gpuHeader);
+        
+                if (data.status === 'success') {
+                    const infoLines = data.data.split('\n');
+                    infoLines.forEach(line => {
+                        const p = document.createElement('p');
+			p.style.color = '#00ff00';
+                        p.style.margin = '2px 0';
+                        p.textContent = line;
+                        terminalOutput.appendChild(p);
+                    });
                 } else {
-                    gpuInfoDiv.innerHTML = `Error: ${data.message}`;
+                    const errorLine = document.createElement('p');
+                    errorLine.style.color = '#ff0000';
+                    errorLine.textContent = `错误: ${data.message}`;
+                    terminalOutput.appendChild(errorLine);
                 }
                 
-                // 自动滚动到底部
-                gpuInfoDiv.scrollTop = gpuInfoDiv.scrollHeight;
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
             } catch (error) {
-                gpuInfoDiv.innerHTML = `Request failed: ${error}`;
+                console.error('获取GPU信息失败:', error);
             }
         }
 
