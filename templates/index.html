@@ -2,11 +2,29 @@
 <html lang="en">
 
 <head>
+    <!--
+    LLM Query Interface - Frontend Implementation
+    
+    Provides interactive web interface for DeepSeek-R1 language model operations.
+    Core functionalities:
+    - Real-time chat with markdown rendering
+    - Multi-model selection (1.5B to 70B parameters)
+    - Local/Remote execution mode switching
+    - Conversation history management
+    - Integrated web search capabilities
+    - Terminal-like monitoring interface
+    - GPU utilization monitoring
+    
+    Dependencies:
+    - marked.js (Markdown rendering)
+    - turndown (HTML to Markdown conversion)
+    - WebSocket (Real-time communication)
+    -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LLM Query Interface</title>
     <link rel="stylesheet" href="static/styles.css">
-    <script src="https://unpkg.com/turndown@7.1.1/dist/turndown.js"></script>
+    <script src="https://unpkg.com/turndown@7.1.1/dist/turndown.js" onerror="alert('Failed to load turndown.js')"></script>
 </head>
 
 <body>
@@ -19,6 +37,7 @@
         <button id="new-chat-button" onclick="newChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">New Chat</button>
         <!-- local/remote toggle button -->
         <button id="local-remote-toggle" class="off" onclick="toggleLocalRemote()">Local</button>
+        <label for="model-select" class="model-select-label"></label>
         <select id="model-select">
             <option value="deepseek-r1:1.5b">deepseek-r1:1.5b</option>
             <option value="deepseek-r1:7b">deepseek-r1:7b</option>
@@ -28,8 +47,7 @@
         </select>
     </div>
 
-    <div id="ai-response" placeholder="What can I do for you..." contenteditable="true"></div>
-
+    <div id="ai-response" contenteditable="true" class="hidden"></div>
     <div class="input-container">
         <div class="textarea-container">
             <textarea id="prompt" rows="6" cols="90" placeholder="Please enter your question and press Enter to send..."></textarea>
@@ -38,6 +56,8 @@
             <button id="save-button" onclick="saveMessages()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Json</button>
             <!-- Save as Markdown button -->
             <button id="markdown-button" onclick="saveAsMarkdown()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Markdown</button>
+	    <!-- New ReadFile button -->
+            <button id="readfile-button" onclick="readFile()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">ReadFile</button>
             <!-- Search on/off button -->
             <button id="search-toggle" class="off" onclick="toggleSearch()">Search</button>
             <!-- Reason button -->
@@ -47,60 +67,131 @@
     </div>
 
     <!-- Thinking icon -->
-    <div id="thinking-icon" style="display: none;">
+    <div id="thinking-icon" class="hidden">
         <img src="static/thinking.gif" alt="Thinking...">
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Terminal button and output window -->
+    <button id="terminal-button" onclick="toggleTerminal()">Terminal</button>
+    <!-- GPUbutton -->
+    <button id="gpu-button" onclick="getGPUInfo()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">GPU</button>
+    <div id="terminal-output" class="terminal-output"></div>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" onerror="alert('Failed to load marked.min.js')"></script>
     <script>
+        /**
+         * Main WebSocket client initialization
+         * @event DOMContentLoaded
+         * @listens DOMContentLoaded
+         * @description Initializes WebSocket connection and sets up message handlers
+         */
+	let socket = null;
         let context = "";
-        let isSearchOn = false; 
-        let isReasonOn = false; 
         let isRemote = false; 
-        let isSpeechOn = false;
-        const speechButton = document.getElementById('speech-button');
         let synthesis = window.speechSynthesis;
         let utterance = null; 
-        const textarea = document.getElementById('prompt');
-        const sendButton = document.getElementById('send-button');
-        const searchToggle = document.getElementById('search-toggle');
-        const reasonToggle = document.getElementById('reason-toggle'); // Get the Reason button
+        let isTerminalVisible = false;
+	let ws = null;
+        let isGPUInfoVisible = false;
+	let textarea;
+        let isSearchOn; 
+        let isReasonOn; 
+        let isSpeechOn;
+        
         const aiResponseDiv = document.getElementById('ai-response');
-        const saveButton = document.getElementById('save-button'); // Get the Save button
-        const thinkingIcon = document.getElementById('thinking-icon'); // Get the thinking icon
 
-        // Listen for the keydown event of the text box
-        textarea.addEventListener('keydown', function (event) {
-            if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                sendQuery();
+	// 替换可能存在的 DOMSubtreeModified 监听
+        function setupMutationObservers() {
+          // 监控聊天窗口更新
+          const chatObserver = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+              if (mutation.addedNodes.length) {
+                // 自动滚动到底部
+                const terminalOutput = document.getElementById('terminal-output');
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+              }
+            });
+          });
+        
+          chatObserver.observe(document.getElementById('ai-response'), {
+            childList: true,
+            subtree: true
+          });
+        
+          // 监控终端输出更新
+          const terminalObserver = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+              if (mutation.addedNodes.length) {
+                // 处理终端更新逻辑
+              }
+            });
+          });
+         }
+        // 修改DOMContentLoaded监听器
+        document.addEventListener('DOMContentLoaded', () => {
+	    setupMutationObservers();
+            const textarea = document.getElementById('prompt');
+            const sendButton = document.getElementById('send-button');
+            const saveButton = document.getElementById('save-button'); 
+            const terminalOutput = document.getElementById('terminal-output');
+            searchToggle = document.getElementById('search-toggle');
+            reasonToggle = document.getElementById('reason-toggle'); 
+            speechButton = document.getElementById('speech-button');
+
+            // WebSocket初始化逻辑...
+            socket = new WebSocket('ws://localhost:8765');
+            
+            socket.addEventListener('message', (event) => {
+                const newLine = document.createElement('p');
+                newLine.textContent = event.data;
+                terminalOutput.appendChild(newLine);
+                
+                // 自动滚动到底部
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+            });
+
+            socket.addEventListener('error', (event) => {
+                console.error('WebSocket error:', event);
+            });
+
+            socket.addEventListener('open', (event) => {
+                console.log('WebSocket connection established');
+            });
+
+            socket.addEventListener('close', () => {
+                isSocketActive = false;
+                console.log('WebSocket connection closed');
+            });
+
+            // Listen for the keydown event of the text box
+            textarea.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    sendQuery();
+                }
+            });
+        });
+
+	function toggleTerminal() {
+            const terminalOutput = document.getElementById('terminal-output');
+            isTerminalVisible = !isTerminalVisible;
+            terminalOutput.style.display = isTerminalVisible ? 'block' : 'none';
+            
+            // 当终端可见时，自动滚动到底部
+            if (isTerminalVisible) {
+                document.getElementById('terminal-output').classList.add('terminal-output--visible');
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
             }
-        });
+        }
 
-        // Establish a WebSocket connection
-        const socket = new WebSocket('ws://localhost:8765');
-
-        socket.addEventListener('open', (event) => {
-            console.log('WebSocket connection established'); // 
-        });
-
-        socket.addEventListener('message', (event) => {
-            console.log('Received message:', event.data); // 
-            if (event.data === "start") {
-                thinkingIcon.style.display = "block";
-            } else if (event.data === "end") {
-                thinkingIcon.style.display = "none";
-            }
-        });
-    
-        socket.addEventListener('error', (event) => {
-            console.error('WebSocket error:', event);  // 
-        });
-
-        // Function to send query
+        // Handles query submission and response processing
         async function sendQuery() {
-            const prompt = document.getElementById('prompt').value;
+            const controller = new AbortController();
+            const aiResponseDiv = document.getElementById('ai-response').classList.remove('hidden');
+            const textarea = document.getElementById('prompt');
+            const thinkingIcon = document.getElementById('thinking-icon').classList.remove('hidden');
             const selectedModel = document.getElementById('model-select').value;
+            const prompt = textarea.value;
+
             if (!prompt.trim()) {
                 alert("Prompt cannot be empty!");
                 return;
@@ -130,6 +221,7 @@
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({ prompt, context, model: selectedModel, search_toggle: isSearchOn }),  // Ensure passing the value of isSearchOn
+                    signal: controller.signal
                 });
         
                 const result = await response.json();
@@ -175,6 +267,12 @@
             } catch (error) {
                 console.error('Error sending query:', error);
             }
+
+            finally {
+            controller.abort();
+            // Hide the thinking icon after the response is received
+            document.getElementById('thinking-icon').classList.add('hidden');
+            }
         }
 
         // Function to start a new chat
@@ -188,7 +286,7 @@
                 });
                 if (response.ok) {
                     context = "";
-                    const aiResponseDiv = document.getElementById('ai-response');
+                    document.getElementById('ai-response').classList.add('hidden');
                     aiResponseDiv.innerHTML = '';
                 }
             } catch (error) {
@@ -217,6 +315,7 @@
                             });
                             if (response.ok) {
                                 const data = await response.json();
+                                aiResponseDiv.style.display = 'block';
                                 aiResponseDiv.innerHTML = '';
                                 data.forEach(message => {
                                     const div = document.createElement('div');
@@ -246,6 +345,14 @@
         }
 
         // New function to toggle the local/remote button state
+        /**
+         * Toggles execution mode between local and remote
+         * @async
+         * @function toggleLocalRemote
+         * @emits modeChange Notifies backend of mode change
+         * @see APIRouterHandler.toggle_local_remote
+         */
+
         async function toggleLocalRemote() {
             const toggleButton = document.getElementById('local-remote-toggle');
             isRemote = !isRemote; // 切换isRemote的值
@@ -258,7 +365,7 @@
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ isRemote: isRemote })
+                body: JSON.stringify({ "isRemote": isRemote })
             });
            
             const data = await response.json();
@@ -293,6 +400,15 @@
             }
         }
 
+        /**
+         * URL formatting utility
+         * @function convertUrlsToLinks
+         * @param {string} text - Input text containing raw URLs
+         * @returns {string} Formatted text with Markdown-style links
+         * @example
+         * // Input: "Visit https://example.com"
+         * // Output: "Visit [https://example.com]"
+         */
         function convertUrlsToLinks(text) {
             // 匹配网址的正则表达式
             const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -347,10 +463,30 @@
     
             // Revoke the URL object
             URL.revokeObjectURL(url);
+
+            try {
+                // 发送请求到服务器端记录日志
+                const response = await fetch('/save-markdown', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+            } catch (error) {
+                console.error('Error sending request:', error);
+            }
         }
 
         // 添加语音切换函数
         function toggleSpeech() {
+            if (synthesis.speaking) {
+                synthesis.cancel();
+            }
             isSpeechOn = !isSpeechOn;
             if (isSpeechOn) {
                 speechButton.classList.remove('off');
@@ -390,6 +526,75 @@
                 synthesis.cancel();
             }
         }
+
+        async function getGPUInfo() {
+            try {
+                // 如果终端窗口隐藏，则强制显示
+                if (!isTerminalVisible) {
+                    toggleTerminal(); // 切换终端可见状态
+                }
+                
+                const controller = new AbortController();
+                const response = await fetch('/get-gpu-info', {
+                    signal: controller.signal
+                });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
+                const data = await response.json();
+                const terminalOutput = document.getElementById('terminal-output');
+                
+                // 检查终端是否仍然可见
+                if (!isTerminalVisible) return;
+        
+                const timestamp = new Date().toLocaleTimeString();
+                const gpuHeader = document.createElement('p');
+                gpuHeader.innerHTML = `<span style="color: #00ff00;">${timestamp} [GPU监控]</span>`;
+                terminalOutput.appendChild(gpuHeader);
+        
+                if (data.status === 'success') {
+                    data.data.split('\n').forEach(line => {
+                        const p = document.createElement('p');
+                        p.style.color = '#00ff00';
+                        p.style.margin = '2px 0';
+                        p.textContent = line;
+                        terminalOutput.appendChild(p);
+                    });
+                } else {
+                    const errorLine = document.createElement('p');
+                    errorLine.style.color = '#ff0000';
+                    errorLine.textContent = `错误: ${data.message}`;
+                    terminalOutput.appendChild(errorLine);
+                }
+                
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+            } catch (error) {
+                // 捕获并静默处理已取消的请求
+                if (error.name !== 'AbortError') {
+                    console.error('获取GPU信息失败:', error);
+                }
+            }
+        }
+
+        // New function to read file and update prompt
+        async function readFile() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.txt, .json, .py, .md'; // 仅允许选择文本文件
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = async (event) => {
+                        const fileText = event.target.result;
+                        const promptElement = document.getElementById('prompt');
+                        // 将文件内容添加到prompt中
+			promptElement.value = `用户上传的文件名为 ${file.name}\n.请先阅读以下文件内容：\n${fileText}\n\n然后回答我的问题：`;
+                    };
+                    reader.readAsText(file);
+                }
+            };
+            input.click();
+        }        
     </script>
 </body>
 
