@@ -87,28 +87,28 @@
          */
 	let socket = null;
         let context = "";
-        let isSearchOn = false; 
-        let isReasonOn = false; 
         let isRemote = false; 
-        let isSpeechOn = false;
         let synthesis = window.speechSynthesis;
         let utterance = null; 
         let isTerminalVisible = false;
 	let ws = null;
         let isGPUInfoVisible = false;
 	let textarea;
+        let isSearchOn; 
+        let isReasonOn; 
+        let isSpeechOn;
         
         const aiResponseDiv = document.getElementById('ai-response');
         // 修改DOMContentLoaded监听器为：
         document.addEventListener('DOMContentLoaded', () => {
-            const speechButton = document.getElementById('speech-button');
             const textarea = document.getElementById('prompt');
             const sendButton = document.getElementById('send-button');
-            const searchToggle = document.getElementById('search-toggle');
-            const reasonToggle = document.getElementById('reason-toggle'); // Get the Reason button
-            const saveButton = document.getElementById('save-button'); // Get the Save button
-            const thinkingIcon = document.getElementById('thinking-icon'); // Get the thinking icon
+            const saveButton = document.getElementById('save-button'); 
+            const thinkingIcon = document.getElementById('thinking-icon'); 
             const terminalOutput = document.getElementById('terminal-output');
+            searchToggle = document.getElementById('search-toggle');
+            reasonToggle = document.getElementById('reason-toggle'); 
+            speechButton = document.getElementById('speech-button');
 
             // WebSocket初始化逻辑...
             socket = new WebSocket('ws://localhost:8765');
@@ -298,6 +298,7 @@
                             });
                             if (response.ok) {
                                 const data = await response.json();
+                                aiResponseDiv.style.display = 'block';
                                 aiResponseDiv.innerHTML = '';
                                 data.forEach(message => {
                                     const div = document.createElement('div');

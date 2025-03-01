@@ -304,22 +304,48 @@ class APIRouterHandler:
                         return JSONResponse(content={"error": f"JSON decode error: {e}"}, status_code=500)
            
                 # Parse the <think> tag
-                parts = re.split(r'(<think>.*?</think>)', generated_response, flags=re.IGNORECASE | re.DOTALL)
-                for part in parts:
-                    if part.startswith('<think>') and part.endswith('</think>'):
-                        think_content = part[7:-8]  # Remove the <think> tag
-                    elif part:
-                        ai_response = ""  # 初始化变量                        
-                        for part in parts:
-                            if ...:
-                                ...
-                            elif part:
-                                ai_response += part.replace("\n", "").strip()
+#               parts = re.split(r'(<think>.*?</think>)', generated_response, flags=re.IGNORECASE | re.DOTALL)
+#               for part in parts:
+#                   if part.startswith('<think>') and part.endswith('</think>'):
+#                       think_content = part[7:-8]  # Remove the <think> tag
+#                   elif part:
+#                       ai_response = ""  # 初始化变量                        
+#                       for part in parts:
+#                           if ...:
+#                               ...
+#                           elif part:
+#                               ai_response += part.replace("\n", "").strip()
 
-                if ai_response:
+#               if ai_response:
+#                   self.logger.info(f"[AI response] {ai_response}")
+
+# 替换原有的 <think> 标签解析逻辑
+                try:
+                    # 尝试提取 <think> 内容（如果存在）
+                    think_content = ""
+                    ai_response = generated_response  # 默认使用完整响应
+                    
+                    # 查找所有 <think> 标签内容
+                    think_matches = re.findall(r'<think>(.*?)</think>', generated_response, flags=re.DOTALL)
+                    if think_matches:
+                        think_content = think_matches[0]
+                        # 移除所有 <think> 标签，保留剩余内容作为 AI 响应
+                        ai_response = re.sub(r'<think>.*?</think>', '', generated_response, flags=re.DOTALL).strip()
+                    
+                    # 记录 AI 响应
                     self.logger.info(f"[AI response] {ai_response}")
+                    
+                    # 更新上下文（确保 ai_response 不为空）
+                    if not ai_response:
+                        ai_response = "[System] 未能获取有效响应"
+                    self.all_messages.append({"role": "system", "content": ai_response})
+                    
+                except Exception as parse_error:
+                    self.logger.error(f"[System] 响应解析失败: {parse_error}")
+                    self.all_messages.append({"role": "system", "content": "[System] 响应解析错误"})
+
                 # Update the context
-                self.all_messages.append({"role": "system", "content": ai_response})
+                #self.all_messages.append({"role": "system", "content": ai_response})
                 formatted_messages = json.dumps(self.all_messages, indent=4, ensure_ascii=False)
             
                 # Notify the front end that the command execution is complete
@@ -350,7 +376,7 @@ class APIRouterHandler:
             # 处理网页搜索的逻辑
             data = await request.json()
             prompt = data.get('prompt')
-            search_result = web_search(prompt)
+            search_result = self.chat_handler.web_search(prompt)
             return JSONResponse(content={"web_context": search_result})
 
 
