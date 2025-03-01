@@ -1,3 +1,6 @@
+#############################################3
+#back end DeepQuery.py
+#############################################3
 """
 DeepSeek-R1 Query Backend System
 
@@ -43,7 +46,6 @@ import pystray
 import signal
 import threading
 import edge_tts
-import speech_recognition as sr
 from asyncio import Queue, create_task
 from datetime import datetime
 from fastapi import FastAPI, Request
@@ -141,11 +143,7 @@ class APIRouterHandler:
         self.ws_handler = ws_handler
         self.is_remote = False 
         self.all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
-        self.is_voice_active = True  # 默认开启语音识别
-        self.voice_task = None
-        self.voice_service = VoiceRecognitionService(logger)
         self._load_config()
-        self.logger.info("[System] Initializing APIRouterHandler")
 
     def _load_config(self):
         """Loads SSH configuration from .deepquery.config file."""
@@ -155,53 +153,6 @@ class APIRouterHandler:
         self.SSH_PORT = self.config.get('SSH_PORT', 22)
         self.SSH_USER = self.config.get('SSH_USER')
         self.SSH_PASSWORD = self.config.get('SSH_PASSWORD')
-
-    async def start_voice_recognition(self):
-        """启动语音识别任务"""
-        import httpx  # 需要安装 httpx：pip install httpx
-        query_url = "http://localhost:8000/query"  # 默认本地
-        if self.is_remote:
-            self.logger.warning("[Voice] Running in remote mode, ensure remote server supports /query endpoint")
-            # 如果远程服务器也有 FastAPI 服务，替换为远程地址，例如：
-            # query_url = "http://remote-server:8000/query"
-        while self.is_voice_active:
-            async for prompt in self.voice_service.start_listening():
-                if prompt:
-                    self.logger.info(f"[Voice] 处理语音输入: {prompt}")
-                    self.all_messages.append({"role": "user", "content": prompt})
-                    # 使用 httpx 发送 POST 请求到 /query
-                    async with httpx.AsyncClient() as client:
-                        try:
-                            response = await client.post(
-                                "http://localhost:8000/query",
-                                json={
-                                    "prompt": prompt,
-                                    "model": "deepseek-r1:32b",
-                                    "search_toggle": False
-                                },
-                                timeout=30.0
-                            )
-                            response.raise_for_status()
-                            result = response.json()
-                            self.logger.info(f"[Voice Query Result]: {result}")
-                        except Exception as e:
-                            self.logger.error(f"[Voice Query Error]: {str(e)}")
-                        
-#   async def start_voice_recognition(self):
-#       """启动语音识别任务"""
-#       while self.is_voice_active:
-#           async for prompt in self.voice_service.start_listening():
-#               if prompt:
-#                   self.logger.info(f"[Voice] 处理语音输入: {prompt}")
-#                   self.all_messages.append({"role": "user", "content": prompt})
-#                   # 构造模拟请求
-#                   request = Request(scope={"type": "http"}, receive=None)
-#                   request._json = {
-#                       "prompt": prompt,
-#                       "model": "deepseek-r1:32b",
-#                       "search_toggle": False
-#                   }
-#           await self.query(request)
 
     def setup_routes(self):
         """Configures all API endpoints."""
@@ -214,23 +165,6 @@ class APIRouterHandler:
         async def index(request: Request):
             return templates.TemplateResponse("index.html", {"request": request})
 
-        @self.app.post("/toggle-voice")
-        async def toggle_voice(request: Request):
-            data = await request.json()
-            self.is_voice_active = data.get("isVoiceActive", False)
-            self.logger.info(f"[Voice] 语音识别状态切换为: {self.is_voice_active}")
-            if self.is_voice_active:
-                self.logger.info("[Voice] 语音识别已激活")
-                # 取消已有任务（避免重复）
-                if self.voice_task and not self.voice_task.done():
-                    self.voice_task.cancel()
-                # 启动新任务
-                self.voice_task = create_task(self.start_voice_recognition())
-            else:
-                if self.voice_task:
-                    self.voice_task.cancel()
-            return JSONResponse(content={"status": "success"})
-        
         @self.app.post("/query")
         async def query(request: Request):
             """Handles LLM query requests.
@@ -506,15 +440,6 @@ class APIRouterHandler:
                 self.logger.info('[Access] local model directly')
             return JSONResponse(content={"status": "success"})
 
-        @app.get("/voice-stream")
-        async def voice_stream(request: Request):
-            async def event_generator():
-                while api_handler.is_voice_active:
-                    # 从队列获取语音识别结果
-                    prompt = await api_handler.voice_service.audio_queue.get()
-                    yield f"data: {prompt}\n\n"
-            return StreamingResponse(event_generator(), media_type="text/event-stream")
-
         @self.app.get("/get-gpu-info")
         async def get_gpu_info():
             """Retrieves GPU utilization metrics.
@@ -715,92 +640,6 @@ class WebSocketLogHandler(logging.Handler):
             pass  # 队列满了，忽略这条日志
 #endregion
 
-# 新增语音服务类
-#region VoiceRecognitionService
-class VoiceRecognitionService:
-    def __init__(self, logger):
-        self.logger = logger
-        self.recognizer = sr.Recognizer()
-        self.is_listening = True
-        self.audio_queue = Queue()
-
-    async def start_listening(self):
-        """异步语音识别生成器"""
-        while self.is_listening:
-            try:
-                with sr.Microphone() as source:
-                    self.recognizer.adjust_for_ambient_noise(source, duration=2)  # 增加调整时间
-                    self.logger.info("[Voice] 麦克风准备就绪")
-                    full_query = ""
-                    has_started = False
-                    unrecognized_count = 0  # 记录连续无法识别的次数
-
-                    while self.is_listening:
-                        try:
-                            self.logger.info("[Voice] 开始监听音频...")
-                            audio = await asyncio.to_thread(
-                                self.recognizer.listen,
-                                source,
-                                timeout=5,
-                                phrase_time_limit=10
-                            )
-                            self.logger.info("[Voice] 音频捕获成功，正在识别...")
-                            text = await asyncio.to_thread(
-                                self.recognizer.recognize_google,
-                                audio,
-                                language="zh-CN"
-                            )
-                            self.logger.info(f"[Voice] 识别结果: {text}")
-
-                            unrecognized_count = 0  # 成功识别后重置计数器
-
-                            # 未开始时，检测“小弟”作为起点
-                            if not has_started:
-                                if "小弟" in text:
-                                    has_started = True
-                                    full_query = text.split("小弟")[-1].strip()
-                                    self.logger.info(f"[Voice] 检测到'小弟'，开始记录查询: {full_query}")
-                                continue
-
-                            # 已开始，累积查询内容
-                            if has_started:
-                                full_query = (full_query + " " + text).strip()
-                                self.logger.info(f"[Voice] 当前累积查询: {full_query}")
-
-                        except sr.WaitTimeoutError:
-                            self.logger.info("[Voice] 监听超时，未检测到语音")
-                            if has_started and full_query.strip():
-                                self.logger.info(f"[Voice] 超时后提取查询: {full_query}")
-                                await self.audio_queue.put(full_query)
-                                yield full_query
-                                full_query = ""
-                                has_started = False
-                                unrecognized_count = 0
-                            continue
-                        except sr.UnknownValueError:
-                            self.logger.warning("[Voice] 无法识别语音，可能为空或噪音")
-                            unrecognized_count += 1
-                            if has_started and full_query.strip() and unrecognized_count >= 3:
-                                self.logger.info(f"[Voice] 连续 {unrecognized_count} 次无法识别，提交查询: {full_query}")
-                                await self.audio_queue.put(full_query)
-                                yield full_query
-                                full_query = ""
-                                has_started = False
-                                unrecognized_count = 0
-                            continue
-                        except sr.RequestError as e:
-                            self.logger.error(f"[Voice] Google语音识别服务错误: {e}")
-                            await asyncio.sleep(5)
-                            continue
-            except OSError as e:
-                self.logger.error(f"[Voice] 麦克风不可用: {str(e)}")
-                await asyncio.sleep(5)
-                continue
-            except Exception as e:
-                self.logger.error(f"[Voice] 错误: {str(e)}")
-                await asyncio.sleep(1)
-#endregion
-
 def create_tray_icon():
     """Creates system tray icon with menu items.
     
@@ -896,13 +735,6 @@ async def main():
         5. Opens web interface
         6. Starts Uvicorn server
     """
-# 初始化 API 处理器
-    api_handler = APIRouterHandler(app, logger, chat_handler, ws_handler)
-
-    # 启动语音识别任务
-    if api_handler.is_voice_active:
-        api_handler.logger.info("[Voice] Starting voice recognition in main")
-        api_handler.voice_task = create_task(api_handler.start_voice_recognition())
 
     # 启动系统托盘图标（在新线程中）
     tray_thread = threading.Thread(target=run_tray_icon, daemon=True)
@@ -935,3 +767,626 @@ async def main():
 if __name__ == "__main__":
     """Application entry point."""
     asyncio.run(main())
+#############################################3
+#front end index.html
+#############################################3
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <!--
+    LLM Query Interface - Frontend Implementation
+    
+    Provides interactive web interface for DeepSeek-R1 language model operations.
+    Core functionalities:
+    - Real-time chat with markdown rendering
+    - Multi-model selection (1.5B to 70B parameters)
+    - Local/Remote execution mode switching
+    - Conversation history management
+    - Integrated web search capabilities
+    - Terminal-like monitoring interface
+    - GPU utilization monitoring
+    
+    Dependencies:
+    - marked.js (Markdown rendering)
+    - turndown (HTML to Markdown conversion)
+    - WebSocket (Real-time communication)
+    -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Query Interface</title>
+    <link rel="stylesheet" href="static/styles.css">
+    <script src="https://unpkg.com/turndown@7.1.1/dist/turndown.js" onerror="alert('Failed to load turndown.js')"></script>
+</head>
+
+<body>
+    <h2 class="page-title">DeepSeek-R1 Query Tool</h2>
+
+    <div class="input-container">
+        <!-- Load Chat button -->
+        <button id="load-chat-button" onclick="loadChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Load Chat</button>
+        <!-- New Chat button -->
+        <button id="new-chat-button" onclick="newChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">New Chat</button>
+        <!-- local/remote toggle button -->
+        <button id="local-remote-toggle" class="off" onclick="toggleLocalRemote()">Local</button>
+        <label for="model-select" class="model-select-label"></label>
+        <select id="model-select">
+            <option value="deepseek-r1:1.5b">deepseek-r1:1.5b</option>
+            <option value="deepseek-r1:7b">deepseek-r1:7b</option>
+            <option value="deepseek-r1:32b" selected>deepseek-r1:32b</option>
+            <option value="deepseek-r1:70b">deepseek-r1:70b</option>
+            <option value="deepseek-r1:671b">deepseek-r1:671b</option>
+        </select>
+    </div>
+
+    <div id="ai-response" contenteditable="true" class="hidden"></div>
+    <div class="input-container">
+        <div class="textarea-container">
+            <textarea id="prompt" rows="6" cols="90" placeholder="Please enter your question and press Enter to send..."></textarea>
+            <button id="send-button" onclick="sendQuery()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Enter</button>
+            <!-- Save as Json button -->
+            <button id="save-button" onclick="saveMessages()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Json</button>
+            <!-- Save as Markdown button -->
+            <button id="markdown-button" onclick="saveAsMarkdown()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Markdown</button>
+	    <!-- New ReadFile button -->
+            <button id="readfile-button" onclick="readFile()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">ReadFile</button>
+            <!-- Search on/off button -->
+            <button id="search-toggle" class="off" onclick="toggleSearch()">Search</button>
+            <!-- Reason button -->
+            <button id="reason-toggle" class="off" onclick="toggleReason()">Reason</button>
+            <button id="speech-button" class="off" onclick="toggleSpeech()">Speech</button>
+        </div>
+    </div>
+
+    <!-- Thinking icon -->
+    <div id="thinking-icon" class="hidden">
+        <img src="static/thinking.gif" alt="Thinking...">
+    </div>
+
+    <!-- Terminal button and output window -->
+    <button id="terminal-button" onclick="toggleTerminal()">Terminal</button>
+    <!-- GPUbutton -->
+    <button id="gpu-button" onclick="getGPUInfo()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">GPU</button>
+    <div id="terminal-output" class="terminal-output"></div>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" onerror="alert('Failed to load marked.min.js')"></script>
+    <script>
+        /**
+         * Main WebSocket client initialization
+         * @event DOMContentLoaded
+         * @listens DOMContentLoaded
+         * @description Initializes WebSocket connection and sets up message handlers
+         */
+	let socket = null;
+        let context = "";
+        let isRemote = false; 
+        let utterance = null; 
+        let isTerminalVisible = false;
+	let ws = null;
+        let isGPUInfoVisible = false;
+	let textarea;
+        let isSearchOn; 
+        let isReasonOn; 
+	let isSpeechOn = false;
+	let audioElement = null;
+        
+        const aiResponseDiv = document.getElementById('ai-response');
+
+	// 替换可能存在的 DOMSubtreeModified 监听
+        function setupMutationObservers() {
+          // 监控聊天窗口更新
+          const chatObserver = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+              if (mutation.addedNodes.length) {
+                // 自动滚动到底部
+                const terminalOutput = document.getElementById('terminal-output');
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+              }
+            });
+          });
+        
+          chatObserver.observe(document.getElementById('ai-response'), {
+            childList: true,
+            subtree: true
+          });
+        
+          // 监控终端输出更新
+          const terminalObserver = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+              if (mutation.addedNodes.length) {
+                // 处理终端更新逻辑
+              }
+            });
+          });
+         }
+        // 修改DOMContentLoaded监听器
+        document.addEventListener('DOMContentLoaded', () => {
+	    setupMutationObservers();
+            const textarea = document.getElementById('prompt');
+            const sendButton = document.getElementById('send-button');
+            const saveButton = document.getElementById('save-button'); 
+            const terminalOutput = document.getElementById('terminal-output');
+            searchToggle = document.getElementById('search-toggle');
+            reasonToggle = document.getElementById('reason-toggle'); 
+            speechButton = document.getElementById('speech-button');
+
+            // WebSocket初始化逻辑...
+            socket = new WebSocket('ws://localhost:8765');
+            
+            socket.addEventListener('message', (event) => {
+                const newLine = document.createElement('p');
+                newLine.textContent = event.data;
+                terminalOutput.appendChild(newLine);
+                
+                // 自动滚动到底部
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+            });
+
+            socket.addEventListener('error', (event) => {
+                console.error('WebSocket error:', event);
+            });
+
+            socket.addEventListener('open', (event) => {
+                console.log('WebSocket connection established');
+            });
+
+            socket.addEventListener('close', () => {
+                isSocketActive = false;
+                console.log('WebSocket connection closed');
+            });
+
+            // Listen for the keydown event of the text box
+            textarea.addEventListener('keydown', function (event) {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    sendQuery();
+                }
+            });
+        });
+
+	function toggleTerminal() {
+            const terminalOutput = document.getElementById('terminal-output');
+            isTerminalVisible = !isTerminalVisible;
+            terminalOutput.style.display = isTerminalVisible ? 'block' : 'none';
+            
+            // 当终端可见时，自动滚动到底部
+            if (isTerminalVisible) {
+                document.getElementById('terminal-output').classList.add('terminal-output--visible');
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+            }
+        }
+
+        // Handles query submission and response processing
+        async function sendQuery() {
+            const controller = new AbortController();
+            const aiResponseDiv = document.getElementById('ai-response').classList.remove('hidden');
+            const textarea = document.getElementById('prompt');
+            const thinkingIcon = document.getElementById('thinking-icon').classList.remove('hidden');
+            const selectedModel = document.getElementById('model-select').value;
+            const prompt = textarea.value;
+
+            if (!prompt.trim()) {
+                alert("Prompt cannot be empty!");
+                return;
+            }
+
+            let web_context = "";  // Initialize web_context
+
+            // Set the value of web_context based on the search on/off button state
+            if (isSearchOn) {
+                try {
+                    const searchResponse = await fetch('/web_search', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ prompt: prompt })
+                    });
+                    const searchData = await searchResponse.json();
+                    web_context = searchData.web_context;
+                } catch (error) {
+                    console.error('Search failed:', error);
+                }
+            }
+        
+            try {
+                const response = await fetch('/query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ prompt, context, model: selectedModel, search_toggle: isSearchOn }),  // Ensure passing the value of isSearchOn
+                    signal: controller.signal
+                });
+        
+                const result = await response.json();
+                if (result.error) {
+                    document.getElementById('ai-response').innerText = result.error;
+                } else {
+                    const aiResponseDiv = document.getElementById('ai-response');
+                    const userQuestion = document.createElement('div');
+                    userQuestion.classList.add('user-question');
+                    userQuestion.innerHTML = `${marked.parse('User')} ${marked.parse(prompt)}`;
+                    aiResponseDiv.appendChild(userQuestion);
+        
+                    const aiResponseText = result.response;
+                    const thinkingStartIndex = aiResponseText.indexOf('<think>');
+                    const thinkingEndIndex = aiResponseText.indexOf('</think>');
+                    if (thinkingStartIndex !== -1 && thinkingEndIndex !== -1) {
+                        // Only output ThinkingText when Reason button is pressed
+                        if (isReasonOn) {
+                            const aiThinking = document.createElement('div');
+                            aiThinking.classList.add('ai-thinking');
+                            const thinkingText = aiResponseText.substring(thinkingStartIndex + 7, thinkingEndIndex);
+                            convertedText = convertUrlsToLinks(thinkingText);
+                            aiThinking.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(convertedText)}`;
+                            aiResponseDiv.appendChild(aiThinking);
+                        }
+                        const aiNormalResponse = document.createElement('div');
+                        aiNormalResponse.classList.add('ai-response-normal');
+                        const normalResponseText = aiResponseText.substring(thinkingEndIndex + 8);
+                        convertedText = convertUrlsToLinks(normalResponseText);
+                        aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(convertedText)}`;
+                        aiResponseDiv.appendChild(aiNormalResponse);
+
+                    } else {
+                        const aiNormalResponse = document.createElement('div');
+                        aiNormalResponse.classList.add('ai-response-normal');
+                        convertedText = convertUrlsToLinks(aiResponseText);
+                        aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(convertedText)}`;
+                        aiResponseDiv.appendChild(aiNormalResponse);
+                    }
+                    context = result.context;
+                    // 新增：如果语音按钮处于激活状态则自动播放
+                    if (isSpeechOn) {
+                        await speakCurrentResponse();
+                    }
+                }
+            } catch (error) {
+                console.error('Error sending query:', error);
+            }
+
+            finally {
+            controller.abort();
+            // Hide the thinking icon after the response is received
+            document.getElementById('thinking-icon').classList.add('hidden');
+            }
+        }
+
+        // Function to start a new chat
+        async function newChat() {
+            try {
+                const response = await fetch('/new-chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                if (response.ok) {
+                    context = "";
+                    document.getElementById('ai-response').classList.add('hidden');
+                    aiResponseDiv.innerHTML = '';
+                }
+            } catch (error) {
+                console.error('Error resetting chat:', error);
+            }
+        }
+
+        // New load chat function
+        async function loadChat() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = async (event) => {
+                        try {
+                            const content = JSON.parse(event.target.result);
+                            const response = await fetch('/load-chat', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify(content)
+                            });
+                            if (response.ok) {
+                                const data = await response.json();
+                                aiResponseDiv.style.display = 'block';
+                                aiResponseDiv.innerHTML = '';
+                                data.forEach(message => {
+                                    const div = document.createElement('div');
+                                    // Convert message object to formatted JSON string
+                                    const jsonText = JSON.stringify(message, null, 2);
+                                    // Wrap JSON text in <pre> tag
+                                    const pre = document.createElement('pre');
+                                    pre.textContent = jsonText;
+                                    // Set font size, here it's set to 16px, you can adjust as needed
+                                    pre.style.fontSize = '16px'; 
+                                    // Set white-space to pre-wrap, allowing line breaks
+                                    pre.style.whiteSpace = 'pre-wrap'; 
+                                    // Set word-wrap to break-word, forcing long words to wrap
+                                    pre.style.wordWrap = 'break-word'; 
+                                    div.appendChild(pre);
+                                    aiResponseDiv.appendChild(div);
+                                });
+                            }
+                        } catch (error) {
+                            console.error('Error loading chat:', error);
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+            };
+            input.click();
+        }
+
+        // New function to toggle the local/remote button state
+        /**
+         * Toggles execution mode between local and remote
+         * @async
+         * @function toggleLocalRemote
+         * @emits modeChange Notifies backend of mode change
+         * @see APIRouterHandler.toggle_local_remote
+         */
+
+        async function toggleLocalRemote() {
+            const toggleButton = document.getElementById('local-remote-toggle');
+            isRemote = !isRemote; // 切换isRemote的值
+            toggleButton.classList.toggle('off');
+            toggleButton.textContent = isRemote ? 'Remote' : 'Local';
+           
+            // 发送请求到后端
+            const response = await fetch('/toggle-local-remote', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ "isRemote": isRemote })
+            });
+           
+            const data = await response.json();
+            if (data.status === 'success') {
+                console.log('Local/Remote mode toggled successfully');
+            } else {
+                console.error('Failed to toggle local/remote mode');
+            }
+        }
+
+        // New function to toggle the search on/off button state
+        function toggleSearch() {
+            isSearchOn = !isSearchOn;
+            if (isSearchOn) {
+                searchToggle.classList.remove('off');
+                searchToggle.classList.add('on');
+            } else {
+                searchToggle.classList.remove('on');
+                searchToggle.classList.add('off');
+            }
+        }
+
+        // New function to toggle the reason on/off button state
+        function toggleReason() {
+            isReasonOn = !isReasonOn;
+            if (isReasonOn) {
+                reasonToggle.classList.remove('off');
+                reasonToggle.classList.add('on');
+            } else {
+                reasonToggle.classList.remove('on');
+                reasonToggle.classList.add('off');
+            }
+        }
+
+        /**
+         * URL formatting utility
+         * @function convertUrlsToLinks
+         * @param {string} text - Input text containing raw URLs
+         * @returns {string} Formatted text with Markdown-style links
+         * @example
+         * // Input: "Visit https://example.com"
+         * // Output: "Visit [https://example.com]"
+         */
+        function convertUrlsToLinks(text) {
+            // 匹配网址的正则表达式
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+        
+            // 将匹配到的网址替换为超链接
+            return text.replace(urlRegex, function(url) {
+                return `[${url}]`;
+            });
+	}
+
+        // New function to save all messages as a JSON file
+        async function saveMessages() {
+            try {
+                const response = await fetch('/get-all-messages', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                const allMessages = await response.json();
+                const jsonData = JSON.stringify(allMessages, null, 2);
+                const blob = new Blob([jsonData], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'all_messages.json';
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                console.error('Error saving messages:', error);
+            }
+        }
+        // New function to save ai_response content as Markdown
+        async function saveAsMarkdown() {
+            const aiResponseDiv = document.getElementById('ai-response');
+            const aiResponseText = aiResponseDiv.innerHTML;
+
+            // Create TurndownService instance                                         
+            const turndownService = new TurndownService();
+            // Convert HTML to Markdown
+            const markdownText = turndownService.turndown(aiResponseText);
+        
+            // Create a Blob object to save content as a Markdown file
+            const blob = new Blob([markdownText], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+    
+            // Create an <a> element to trigger the download
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'ai_response.md';
+            a.click();
+    
+            // Revoke the URL object
+            URL.revokeObjectURL(url);
+
+            try {
+                // 发送请求到服务器端记录日志
+                const response = await fetch('/save-markdown', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({})
+                });
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+            } catch (error) {
+                console.error('Error sending request:', error);
+            }
+        }
+
+        // 添加语音切换函数
+        function toggleSpeech() {
+            isSpeechOn = !isSpeechOn;
+            const speechButton = document.getElementById('speech-button');
+            
+            if (isSpeechOn) {
+                speechButton.classList.remove('off');
+                speechButton.classList.add('on');
+                speakCurrentResponse();
+            } else {
+                speechButton.classList.remove('on');
+                speechButton.classList.add('off');
+                stopSpeech();
+            }
+        }
+        
+        async function speakCurrentResponse() {
+            const aiResponses = document.querySelectorAll('.ai-response-normal');
+            if (!aiResponses.length) return;
+            
+            const lastResponse = aiResponses[aiResponses.length - 1];
+
+            const text = new DOMParser().parseFromString(lastResponse.innerHTML, "text/html").body.textContent;
+        
+            try {
+                const response = await fetch('/synthesize-speech', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ text: text })
+                });
+                
+                if (!response.ok) throw new Error('合成失败');
+                
+                if (audioElement) {
+                    audioElement.pause();
+                }
+                
+                const audioBlob = await response.blob();
+                const audioUrl = URL.createObjectURL(audioBlob);
+                audioElement = new Audio(audioUrl);
+                audioElement.play();
+                
+                audioElement.onended = () => {
+                    isSpeechOn = false;
+                    speechButton.classList.remove('on');
+                    speechButton.classList.add('off');
+                };
+                
+            } catch (error) {
+                console.error('语音播放失败:', error);
+                alert('语音合成失败，请检查控制台');
+            }
+        }
+        
+        function stopSpeech() {
+            if (audioElement) {
+                audioElement.pause();
+                audioElement.currentTime = 0;
+            }
+        }
+        async function getGPUInfo() {
+            try {
+                // 如果终端窗口隐藏，则强制显示
+                if (!isTerminalVisible) {
+                    toggleTerminal(); // 切换终端可见状态
+                }
+                
+                const controller = new AbortController();
+                const response = await fetch('/get-gpu-info', {
+                    signal: controller.signal
+                });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
+                const data = await response.json();
+                const terminalOutput = document.getElementById('terminal-output');
+                
+                // 检查终端是否仍然可见
+                if (!isTerminalVisible) return;
+        
+                const timestamp = new Date().toLocaleTimeString();
+                const gpuHeader = document.createElement('p');
+                gpuHeader.innerHTML = `<span style="color: #00ff00;">${timestamp} [GPU监控]</span>`;
+                terminalOutput.appendChild(gpuHeader);
+        
+                if (data.status === 'success') {
+                    data.data.split('\n').forEach(line => {
+                        const p = document.createElement('p');
+                        p.style.color = '#00ff00';
+                        p.style.margin = '2px 0';
+                        p.textContent = line;
+                        terminalOutput.appendChild(p);
+                    });
+                } else {
+                    const errorLine = document.createElement('p');
+                    errorLine.style.color = '#ff0000';
+                    errorLine.textContent = `错误: ${data.message}`;
+                    terminalOutput.appendChild(errorLine);
+                }
+                
+                terminalOutput.scrollTop = terminalOutput.scrollHeight;
+            } catch (error) {
+                // 捕获并静默处理已取消的请求
+                if (error.name !== 'AbortError') {
+                    console.error('获取GPU信息失败:', error);
+                }
+            }
+        }
+
+        // New function to read file and update prompt
+        async function readFile() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.txt, .json, .py, .md'; // 仅允许选择文本文件
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = async (event) => {
+                        const fileText = event.target.result;
+                        const promptElement = document.getElementById('prompt');
+                        // 将文件内容添加到prompt中
+			promptElement.value = `用户上传的文件名为 ${file.name}\n.请先阅读以下文件内容：\n${fileText}\n\n然后回答我的问题：`;
+                    };
+                    reader.readAsText(file);
+                }
+            };
+            input.click();
+        }        
+    </script>
+</body>
+
+</html>
+

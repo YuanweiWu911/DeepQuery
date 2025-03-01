@@ -58,6 +58,8 @@
             <button id="markdown-button" onclick="saveAsMarkdown()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Markdown</button>
 	    <!-- New ReadFile button -->
             <button id="readfile-button" onclick="readFile()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">ReadFile</button>
+	    <!-- voice toggle button -->
+            <button id="voice-toggle" class="off" onclick="toggleVoice()">Voice</button>
             <!-- Search on/off button -->
             <button id="search-toggle" class="off" onclick="toggleSearch()">Search</button>
             <!-- Reason button -->
@@ -95,6 +97,7 @@
         let isSearchOn; 
         let isReasonOn; 
 	let isSpeechOn = false;
+	let isVoiceActive = true;
 	let audioElement = null;
         
         const aiResponseDiv = document.getElementById('ai-response');
@@ -136,6 +139,10 @@
             searchToggle = document.getElementById('search-toggle');
             reasonToggle = document.getElementById('reason-toggle'); 
             speechButton = document.getElementById('speech-button');
+
+            // 自动启动语音识别
+            toggleVoice();  // 初始化状态
+            startVoiceRecognition();
 
             // WebSocket初始化逻辑...
             socket = new WebSocket('ws://localhost:8765');
@@ -485,6 +492,18 @@
             }
         }
 
+        function toggleVoice() {
+            isVoiceActive = !isVoiceActive;
+            const voiceButton = document.getElementById('voice-toggle');
+            voiceButton.textContent = isVoiceActive ? 'Voice On' : 'Voice Off';
+            if (isVoiceActive) {
+                startVoiceRecognition(); // 启动监听
+            } else {
+                // 关闭EventSource连接
+                if (eventSource) eventSource.close();
+            }
+        }
+
         // 添加语音切换函数
         function toggleSpeech() {
             isSpeechOn = !isSpeechOn;
@@ -500,7 +519,7 @@
                 stopSpeech();
             }
         }
-        
+       
         async function speakCurrentResponse() {
             const aiResponses = document.querySelectorAll('.ai-response-normal');
             if (!aiResponses.length) return;
@@ -545,6 +564,41 @@
                 audioElement.currentTime = 0;
             }
         }
+function startVoiceRecognition() {
+    if (window.eventSource) window.eventSource.close();
+    window.eventSource = new EventSource('/voice-stream');
+    eventSource.onmessage = function(event) {
+        console.log("Received voice data:", event.data); // 调试日志
+        const promptElement = document.getElementById('prompt');
+        promptElement.value = event.data;
+        console.log("Prompt set, sending query..."); // 调试日志
+        sendQuery().then(() => {
+            console.log("Query sent successfully"); // 确认查询完成
+        }).catch(error => {
+            console.error("Query failed:", error); // 捕获错误
+        });
+    };
+    eventSource.onerror = (e) => {
+        console.error('Voice stream error:', e);
+        eventSource.close();
+    };
+}
+//      function startVoiceRecognition() {
+//          if (window.eventSource) window.eventSource.close();
+//          window.eventSource = new EventSource('/voice-stream');
+//          eventSource.onmessage = function(event) {
+//              console.log("Received voice data:", event.data); // 调试日    
+//              const promptElement = document.getElementById('prompt');
+//              promptElement.value = event.data;
+//              console.log("Prompt set, sending query..."); // 调试日志
+//              sendQuery();
+//          };
+//          eventSource.onerror = (e) => {
+//              console.error('语音流错误:', e);
+//              eventSource.close();
+//          };  
+//      }
+        
         async function getGPUInfo() {
             try {
                 // 如果终端窗口隐藏，则强制显示
