@@ -86,19 +86,20 @@
          * @listens DOMContentLoaded
          * @description Initializes WebSocket connection and sets up message handlers
          */
-	let socket = null;
+	    let socket = null;
         let context = "";
         let isRemote = false; 
         let utterance = null; 
         let isTerminalVisible = false;
-	let ws = null;
+	    let ws = null;
         let isGPUInfoVisible = false;
-	let textarea;
+	    let textarea;
         let isSearchOn; 
         let isReasonOn; 
-	let isSpeechOn = false;
-	let isVoiceActive = true;
-	let audioElement = null;
+	    let isSpeechOn = false;
+	    let isVoiceActive = true;
+	    let audioElement = null;
+        let voiceEventSource = null;
         
         const aiResponseDiv = document.getElementById('ai-response');
 
@@ -142,6 +143,7 @@
 
             // 自动启动语音识别
             toggleVoice();  // 初始化状态
+
             startVoiceRecognition();
 
             // WebSocket初始化逻辑...
@@ -154,6 +156,12 @@
                 
                 // 自动滚动到底部
                 terminalOutput.scrollTop = terminalOutput.scrollHeight;
+
+                if (event.data.startsWith("VoicePrompt:")) {
+                const prompt = event.data.replace("VoicePrompt: ", "");
+                document.getElementById('prompt').value = prompt;
+                sendQuery();
+                }
             });
 
             socket.addEventListener('error', (event) => {
@@ -496,14 +504,18 @@
             isVoiceActive = !isVoiceActive;
             const voiceButton = document.getElementById('voice-toggle');
             voiceButton.textContent = isVoiceActive ? 'Voice On' : 'Voice Off';
+            voiceButton.classList.toggle('on', isVoiceActive);
+            
             if (isVoiceActive) {
-                startVoiceRecognition(); // 启动监听
+                startVoiceRecognition();
             } else {
-                // 关闭EventSource连接
-                if (eventSource) eventSource.close();
+                if (voiceEventSource) {
+                    voiceEventSource.close();
+                    voiceEventSource = null;
+                }
             }
         }
-
+        
         // 添加语音切换函数
         function toggleSpeech() {
             isSpeechOn = !isSpeechOn;
@@ -564,41 +576,50 @@
                 audioElement.currentTime = 0;
             }
         }
+
 function startVoiceRecognition() {
-    if (window.eventSource) window.eventSource.close();
-    window.eventSource = new EventSource('/voice-stream');
-    eventSource.onmessage = function(event) {
-        console.log("Received voice data:", event.data); // 调试日志
-        const promptElement = document.getElementById('prompt');
-        promptElement.value = event.data;
-        console.log("Prompt set, sending query..."); // 调试日志
-        sendQuery().then(() => {
-            console.log("Query sent successfully"); // 确认查询完成
-        }).catch(error => {
-            console.error("Query failed:", error); // 捕获错误
-        });
-    };
-    eventSource.onerror = (e) => {
-        console.error('Voice stream error:', e);
-        eventSource.close();
-    };
-}
-//      function startVoiceRecognition() {
-//          if (window.eventSource) window.eventSource.close();
-//          window.eventSource = new EventSource('/voice-stream');
-//          eventSource.onmessage = function(event) {
-//              console.log("Received voice data:", event.data); // 调试日    
-//              const promptElement = document.getElementById('prompt');
-//              promptElement.value = event.data;
-//              console.log("Prompt set, sending query..."); // 调试日志
-//              sendQuery();
-//          };
-//          eventSource.onerror = (e) => {
-//              console.error('语音流错误:', e);
-//              eventSource.close();
-//          };  
-//      }
+    if (voiceEventSource) voiceEventSource.close();
+    voiceEventSource = new EventSource('/voice-stream');
+    
+    let queryQueue = [];
+    let isProcessing = false;
+    
+    voiceEventSource.onmessage = async (event) => {
+        const text = event.data.trim();
+        if (!text) return;
         
+        queryQueue.push(text);  // 使用队列缓冲
+        
+        if (!isProcessing) {
+            isProcessing = true;
+            while (queryQueue.length > 0) {
+                const currentText = queryQueue.shift();
+                document.getElementById('prompt').value = currentText;
+                await sendQuery();
+                document.getElementById('prompt').value = "";
+            }
+            isProcessing = false;
+        }
+    };
+}        
+//      function startVoiceRecognition() {
+//          let isProcessing = false; // 新增防抖标志
+//          
+//          voiceEventSource.onmessage = async function(event) {
+//              if (isProcessing) return;
+//              isProcessing = true;
+//              
+//              const text = event.data.trim();
+//              const promptElement = document.getElementById('prompt');
+//              
+//              promptElement.value = text;
+//              await sendQuery();
+//              promptElement.value = "";
+//              
+//              isProcessing = false;
+//          };
+//      }
+
         async function getGPUInfo() {
             try {
                 // 如果终端窗口隐藏，则强制显示
@@ -671,4 +692,3 @@ function startVoiceRecognition() {
 </body>
 
 </html>
-

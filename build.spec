@@ -2,7 +2,7 @@
 block_cipher = None
 
 a = Analysis(
-    ['DeepQuery.py'],
+    ['DeepQuery_exe.py'],
     pathex=[],
     binaries=[],
     datas=[

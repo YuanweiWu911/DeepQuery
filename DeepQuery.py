@@ -53,6 +53,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.responses import StreamingResponse
 from logging.handlers import QueueHandler
 from PIL import Image
+from asyncio import Lock
 
 tray_icon = None
 server_task = None
@@ -141,9 +142,11 @@ class APIRouterHandler:
         self.ws_handler = ws_handler
         self.is_remote = False 
         self.all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
-        self.is_voice_active = True  # 默认开启语音识别
         self.voice_task = None
+        self.is_voice_active = True  # 默认开启语音识别
+        self.voice_lock = Lock()
         self.voice_service = VoiceRecognitionService(logger)
+        self.voice_service_task = None
         self._load_config()
         self.logger.info("[System] Initializing APIRouterHandler")
 
@@ -158,51 +161,23 @@ class APIRouterHandler:
 
     async def start_voice_recognition(self):
         """启动语音识别任务"""
-        import httpx  # 需要安装 httpx：pip install httpx
-        query_url = "http://localhost:8000/query"  # 默认本地
-        if self.is_remote:
-            self.logger.warning("[Voice] Running in remote mode, ensure remote server supports /query endpoint")
-            # 如果远程服务器也有 FastAPI 服务，替换为远程地址，例如：
-            # query_url = "http://remote-server:8000/query"
+        self.voice_service_task = create_task(self.voice_service.start_listening()) 
         while self.is_voice_active:
-            async for prompt in self.voice_service.start_listening():
-                if prompt:
-                    self.logger.info(f"[Voice] 处理语音输入: {prompt}")
-                    self.all_messages.append({"role": "user", "content": prompt})
-                    # 使用 httpx 发送 POST 请求到 /query
-                    async with httpx.AsyncClient() as client:
-                        try:
-                            response = await client.post(
-                                "http://localhost:8000/query",
-                                json={
-                                    "prompt": prompt,
-                                    "model": "deepseek-r1:32b",
-                                    "search_toggle": False
-                                },
-                                timeout=30.0
-                            )
-                            response.raise_for_status()
-                            result = response.json()
-                            self.logger.info(f"[Voice Query Result]: {result}")
-                        except Exception as e:
-                            self.logger.error(f"[Voice Query Error]: {str(e)}")
-                        
-#   async def start_voice_recognition(self):
-#       """启动语音识别任务"""
-#       while self.is_voice_active:
-#           async for prompt in self.voice_service.start_listening():
-#               if prompt:
-#                   self.logger.info(f"[Voice] 处理语音输入: {prompt}")
-#                   self.all_messages.append({"role": "user", "content": prompt})
-#                   # 构造模拟请求
-#                   request = Request(scope={"type": "http"}, receive=None)
-#                   request._json = {
-#                       "prompt": prompt,
-#                       "model": "deepseek-r1:32b",
-#                       "search_toggle": False
-#                   }
-#           await self.query(request)
-
+            try:
+                prompt = await self.voice_service.audio_queue.get()
+                self.logger.info(f"[Voice] 处理语音输入: {prompt}")
+                self.all_messages.append({"role": "user", "content": prompt})
+                for client in self.ws_handler.connected_clients:
+                   try:
+                       await client.send(f"VoicePrompt: {prompt}")
+                   except Exception as e:
+                       self.logger.error(f"[WebSocket] 发送失败: {e}")
+            except asyncio.CancelledError:
+                self.logger.info(f"[Voice] 语音识别任务被取消")
+                break
+            except Exception as e:
+                self.logger.error(f"[Voice] 处理语音输入出错: {e}")
+                
     def setup_routes(self):
         """Configures all API endpoints."""
         @self.app.get("/favicon.ico")
@@ -224,11 +199,16 @@ class APIRouterHandler:
                 # 取消已有任务（避免重复）
                 if self.voice_task and not self.voice_task.done():
                     self.voice_task.cancel()
+                if self.voice_service_task:
+                    self.voice_service_task.cancel()
                 # 启动新任务
                 self.voice_task = create_task(self.start_voice_recognition())
             else:
+                self.voice_service.stop()
                 if self.voice_task:
                     self.voice_task.cancel()
+                if self.voice_service_task:
+                    self.voice_service_task.cancel()
             return JSONResponse(content={"status": "success"})
         
         @self.app.post("/query")
@@ -248,6 +228,7 @@ class APIRouterHandler:
             """
 
             # 处理查询的逻辑
+            self.logger.info("[Query] Received query request")
             data = await request.json()
             user_input = data.get('prompt').strip()
             if not isinstance(user_input, (str, bytes)):
@@ -508,13 +489,11 @@ class APIRouterHandler:
 
         @app.get("/voice-stream")
         async def voice_stream(request: Request):
-            async def event_generator():
-                while api_handler.is_voice_active:
-                    # 从队列获取语音识别结果
-                    prompt = await api_handler.voice_service.audio_queue.get()
-                    yield f"data: {prompt}\n\n"
-            return StreamingResponse(event_generator(), media_type="text/event-stream")
-
+            return JSONResponse(
+                content={"error": "接口已弃用"},
+                status_code=410
+            ) 
+                
         @self.app.get("/get-gpu-info")
         async def get_gpu_info():
             """Retrieves GPU utilization metrics.
@@ -723,26 +702,38 @@ class VoiceRecognitionService:
         self.recognizer = sr.Recognizer()
         self.is_listening = True
         self.audio_queue = Queue()
-
+        self.should_exit = False
+        self.last_query = ""
+        self.full_query = ""
+        self.has_started = False  # 提升到外层作用域
+        self.unrecognized_count = 0  # 初始化计数器
+    
+    def stop(self):
+        self.is_listening = False
+        self.should_exit = True
+        
+    def reset_state(self):
+        self.full_query = ""
+        self.has_started = False
+        self.unrecognized_count = 0
+        self.logger.info("[Voice] 会话状态已重置，准备新一轮对话")        
+        
     async def start_listening(self):
-        """异步语音识别生成器"""
-        while self.is_listening:
+        while self.is_listening and not self.should_exit:
+            mic = None
             try:
-                with sr.Microphone() as source:
+                mic = sr.Microphone()
+                with mic as source:
                     self.recognizer.adjust_for_ambient_noise(source, duration=2)  # 增加调整时间
                     self.logger.info("[Voice] 麦克风准备就绪")
-                    full_query = ""
-                    has_started = False
-                    unrecognized_count = 0  # 记录连续无法识别的次数
-
-                    while self.is_listening:
+                    while self.is_listening and not self.should_exit:  # 添加退出条件
                         try:
                             self.logger.info("[Voice] 开始监听音频...")
                             audio = await asyncio.to_thread(
                                 self.recognizer.listen,
                                 source,
-                                timeout=5,
-                                phrase_time_limit=10
+                                timeout=3,
+                                phrase_time_limit=8
                             )
                             self.logger.info("[Voice] 音频捕获成功，正在识别...")
                             text = await asyncio.to_thread(
@@ -750,57 +741,59 @@ class VoiceRecognitionService:
                                 audio,
                                 language="zh-CN"
                             )
-                            self.logger.info(f"[Voice] 识别结果: {text}")
-
-                            unrecognized_count = 0  # 成功识别后重置计数器
-
-                            # 未开始时，检测“小弟”作为起点
-                            if not has_started:
-                                if "小弟" in text:
-                                    has_started = True
-                                    full_query = text.split("小弟")[-1].strip()
-                                    self.logger.info(f"[Voice] 检测到'小弟'，开始记录查询: {full_query}")
+                            
+                            if "小弟" in text and not self.has_started:
+                                self.has_started = True
+                                self.full_query = text.split("小弟", 1)[-1].lstrip()
+                                self.logger.info(f"[Voice] 检测到'小弟'，开始记录查询: {self.full_query}")
                                 continue
-
-                            # 已开始，累积查询内容
-                            if has_started:
-                                full_query = (full_query + " " + text).strip()
-                                self.logger.info(f"[Voice] 当前累积查询: {full_query}")
-
-                        except sr.WaitTimeoutError:
-                            self.logger.info("[Voice] 监听超时，未检测到语音")
-                            if has_started and full_query.strip():
-                                self.logger.info(f"[Voice] 超时后提取查询: {full_query}")
-                                await self.audio_queue.put(full_query)
-                                yield full_query
-                                full_query = ""
-                                has_started = False
-                                unrecognized_count = 0
-                            continue
+                    
+                            if text.strip() and self.has_started:
+                                self.last_query = text
+                                self.logger.info(f"[Voice] 识别结果入队: {text}")
+                                self.unrecognized_count = 0
+                                self.full_query = (self.full_query + " " + text).strip()
+                                self.logger.info(f"[Voice] 当前累积查询: {self.full_query}")
+                    
                         except sr.UnknownValueError:
-                            self.logger.warning("[Voice] 无法识别语音，可能为空或噪音")
-                            unrecognized_count += 1
-                            if has_started and full_query.strip() and unrecognized_count >= 3:
-                                self.logger.info(f"[Voice] 连续 {unrecognized_count} 次无法识别，提交查询: {full_query}")
-                                await self.audio_queue.put(full_query)
-                                yield full_query
-                                full_query = ""
-                                has_started = False
-                                unrecognized_count = 0
-                            continue
+                            self.logger.warning(f"[Voice] 无法识别语音输入 (环境噪音: {self.recognizer.energy_threshold})")
+                            self.recognizer.adjust_for_ambient_noise(source, duration=1)  # 动态调整灵敏度0
+                            self.unrecognized_count += 1
+                            
+                            # 满足退出条件时设置标志
+                            if self.has_started and self.unrecognized_count >= 2 and self.full_query:
+                                self.logger.info(f"[Voice] 连续2次未识别，提交查询: {self.full_query}")
+                                await self.audio_queue.put(self.full_query)
+                                self.reset_state()
+                                continue
+                                
+                        except sr.WaitTimeoutError:
+                            if self.has_started and self.full_query:
+                                await self.audio_queue.put(self.full_query)
+                                self.reset_state()
+                                continue
+                            
                         except sr.RequestError as e:
-                            self.logger.error(f"[Voice] Google语音识别服务错误: {e}")
-                            await asyncio.sleep(5)
+                            self.logger.error(f"[Voice] 识别服务暂不可用: {str(e)}")
+                            await asyncio.sleep(3)  # 服务不可用时延长重试间隔
                             continue
+                                                
+                    # 退出外层循环
+                    if self.should_exit:
+                        self.logger.info("[Voice] 退出语音会话")
+                        self.stop()
+                        break
+                        
             except OSError as e:
                 self.logger.error(f"[Voice] 麦克风不可用: {str(e)}")
-                await asyncio.sleep(5)
-                continue
+                await asyncio.sleep(2)
             except Exception as e:
                 self.logger.error(f"[Voice] 错误: {str(e)}")
                 await asyncio.sleep(1)
-#endregion
-
+            finally:
+                if mic:
+                    mic.__exit__(None, None, None)
+                
 def create_tray_icon():
     """Creates system tray icon with menu items.
     
@@ -886,52 +879,55 @@ async def universal_exception_handler(request: Request, exc: Exception):
     )
 
 async def main():
-    """Main application entry point.
-    
-    Execution Flow:
-        1. Initializes logging system
-        2. Starts WebSocket server
-        3. Configures FastAPI routes
-        4. Launches system tray icon
-        5. Opens web interface
-        6. Starts Uvicorn server
-    """
-# 初始化 API 处理器
+    # 初始化API处理器
     api_handler = APIRouterHandler(app, logger, chat_handler, ws_handler)
-
-    # 启动语音识别任务
-    if api_handler.is_voice_active:
-        api_handler.logger.info("[Voice] Starting voice recognition in main")
-        api_handler.voice_task = create_task(api_handler.start_voice_recognition())
-
-    # 启动系统托盘图标（在新线程中）
+    # 启动系统托盘图标（新线程）
     tray_thread = threading.Thread(target=run_tray_icon, daemon=True)
     tray_thread.start()
 
-    webbrowser.open('http://localhost:8000/')
-    # 解除环境变量强制限制
-    if os.getenv("SERPER_API_KEY") is None:
-        logger.warning("[System] SERPER_API_KEY is not set. Web search will be disabled.")
-
+    # 配置服务器
     config = uvicorn.Config(app, host="0.0.0.0", port=8000)
     server = uvicorn.Server(config)
-    
-    ws_task = create_task(ws_handler.log_consumer()) 
- 
-    async with websockets.serve(ws_handler.handle_ws, "localhost", 8765):
-        await server.serve()
-        ws_task.cancel()
-        try:
-            await ws_task
-        except asyncio.CancelledError:
-            pass
 
+    # 并行启动WebSocket和HTTP服务器
+    async with websockets.serve(ws_handler.handle_ws, "localhost", 8765) as ws_server:
+        # 正确启动Uvicorn服务
+        server_task = asyncio.create_task(server.serve())
+        
+        # 打开浏览器
+        webbrowser.open('http://localhost:8000/')
+        
+        try:
+            # 启动语音识别任务
+            if api_handler.is_voice_active:
+                api_handler.voice_task = asyncio.create_task(
+                    api_handler.start_voice_recognition()
+                )
+
+            # 启动日志消费任务
+            ws_task = asyncio.create_task(ws_handler.log_consumer())
+
+            # 等待服务器任务完成
+            await server_task
+
+        except asyncio.CancelledError:
+            logger.info("服务正常终止")
+        finally:
+            # 清理任务
+            if api_handler.voice_task:
+                api_handler.voice_task.cancel()
+            ws_task.cancel()
+            await asyncio.gather(
+                api_handler.voice_task,
+                ws_task,
+                return_exceptions=True
+            )
+            await server.shutdown()
+            
     # 清理托盘图标
     if tray_icon:
         tray_icon.stop()
-
-#endregion
-
+        
 if __name__ == "__main__":
     """Application entry point."""
     asyncio.run(main())
