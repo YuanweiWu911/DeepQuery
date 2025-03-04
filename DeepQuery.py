@@ -26,8 +26,7 @@ Dependencies:
 
 import os
 import sys
-import io
-from io import BytesIO
+#import io
 import json
 import re
 import shlex
@@ -44,19 +43,18 @@ import signal
 import threading
 import edge_tts
 import pygame
-#import pyaudio
-#from pydub import AudioSegment
 import speech_recognition as sr
-from asyncio import Queue, create_task
+from io import BytesIO
+from asyncio import Queue, create_task, Lock
 from datetime import datetime
+from PIL import Image
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import StreamingResponse
 from logging.handlers import QueueHandler
-from PIL import Image
-from asyncio import Lock
+#from asyncio import Lock
 
 tray_icon = None
 server_task = None
@@ -763,53 +761,6 @@ class VoiceRecognitionService:
         except Exception as e:
             self.logger.error(f"[Voice] 音频播放失败: {str(e)}")
 
-#   async def say_response(self, text, voice="zh-CN-YunyangNeural"):
-#       """使用 edge_tts 生成音频流并通过 WebSocket 通知前端播放"""
-#       try:
-#           # 生成音频流
-#           communicate = edge_tts.Communicate(text, voice)
-#           audio_stream = BytesIO()
-#           async for chunk in communicate.stream():
-#               if chunk["type"] == "audio":
-#                   audio_stream.write(chunk["data"])
-#           audio_stream.seek(0)
-#           audio_data = audio_stream.getvalue()
-
-#           # 将音频数据通过 WebSocket 发送到前端
-#           if self.ws_handler and self.ws_handler.connected_clients:
-#               audio_base64 = base64.b64encode(audio_data).decode('utf-8')  # 将音频转为 base64
-#               message = f"PlayAudio:{audio_base64}"
-#               for client in self.ws_handler.connected_clients:
-#                   try:
-#                       await client.send(message)
-#                       self.logger.info(f"[Voice] 发送音频到前端播放: {text}")
-#                   except Exception as e:
-#                       self.logger.error(f"[WebSocket] 发送音频失败: {e}")
-#           else:
-#               self.logger.warning("[Voice] 无活跃 WebSocket 客户端，无法播放音频")
-
-#       except Exception as e:
-#           self.logger.error(f"[Voice] 音频生成失败: {str(e)}")
-#
-#   async def say_response(self, text, voice="zh-CN-YunyangNeural"):
-#       """使用语音合成播放回复"""
-#       try:
-#           communicate = edge_tts.Communicate(text, voice)
-#           audio_stream = BytesIO()
-#           async for chunk in communicate.stream():
-#               if chunk["type"] == "audio":
-#                   audio_stream.write(chunk["data"])
-#           audio_stream.seek(0)
-
-#           # 保存临时音频文件并播放
-#           with open("temp_response.mp3", "wb") as f:
-#               f.write(audio_stream.getvalue())
-#           subprocess.run(["start", "temp_response.mp3"], shell=True)  # Windows 示例，Linux/Mac需调整
-#           self.logger.info(f"[Voice] 播放语音回复: {text}")
-#       except Exception as e:
-#           self.logger.error(f"[Voice] 语音合成失败: {str(e)}")    
-    
-        
     async def start_listening(self):
         while self.is_listening:
             mic = None
