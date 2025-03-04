@@ -136,15 +136,13 @@
             const textarea = document.getElementById('prompt');
             const sendButton = document.getElementById('send-button');
             const saveButton = document.getElementById('save-button'); 
-            const terminalOutput = document.getElementById('terminal-output');
+            terminalOutput = document.getElementById('terminal-output');
             searchToggle = document.getElementById('search-toggle');
             reasonToggle = document.getElementById('reason-toggle'); 
-            speechButton = document.getElementById('speech-button');
+            const speechButton = document.getElementById('speech-button');
 
             // 自动启动语音识别
             toggleVoice();  // 初始化状态
-
-            startVoiceRecognition();
 
             // WebSocket初始化逻辑...
             socket = new WebSocket('ws://localhost:8765');
@@ -161,6 +159,10 @@
                 const prompt = event.data.replace("VoicePrompt: ", "");
                 document.getElementById('prompt').value = prompt;
                 sendQuery();
+                } else if (event.data.startsWith("[front end] query end")) {
+                    // 查询完成后通知后端
+                    socket.send("QueryComplete");
+                    console.log("Sent QueryComplete to backend");
                 }
             });
 
@@ -278,7 +280,7 @@
                     }
                     context = result.context;
                     // 新增：如果语音按钮处于激活状态则自动播放
-                    if (isSpeechOn) {
+                    if (isVoiceActive) {
                         await speakCurrentResponse();
                     }
                 }
@@ -506,6 +508,9 @@
             voiceButton.textContent = isVoiceActive ? 'Voice On' : 'Voice Off';
             voiceButton.classList.toggle('on', isVoiceActive);
             
+            isSpeechOn = isVoiceActive;
+            document.getElementById('speech-button').classList.toggle('on', isVoiceActive);
+            
             if (isVoiceActive) {
                 startVoiceRecognition();
             } else {
@@ -513,6 +518,7 @@
                     voiceEventSource.close();
                     voiceEventSource = null;
                 }
+                stopSpeech();
             }
         }
         
@@ -576,49 +582,6 @@
                 audioElement.currentTime = 0;
             }
         }
-
-function startVoiceRecognition() {
-    if (voiceEventSource) voiceEventSource.close();
-    voiceEventSource = new EventSource('/voice-stream');
-    
-    let queryQueue = [];
-    let isProcessing = false;
-    
-    voiceEventSource.onmessage = async (event) => {
-        const text = event.data.trim();
-        if (!text) return;
-        
-        queryQueue.push(text);  // 使用队列缓冲
-        
-        if (!isProcessing) {
-            isProcessing = true;
-            while (queryQueue.length > 0) {
-                const currentText = queryQueue.shift();
-                document.getElementById('prompt').value = currentText;
-                await sendQuery();
-                document.getElementById('prompt').value = "";
-            }
-            isProcessing = false;
-        }
-    };
-}        
-//      function startVoiceRecognition() {
-//          let isProcessing = false; // 新增防抖标志
-//          
-//          voiceEventSource.onmessage = async function(event) {
-//              if (isProcessing) return;
-//              isProcessing = true;
-//              
-//              const text = event.data.trim();
-//              const promptElement = document.getElementById('prompt');
-//              
-//              promptElement.value = text;
-//              await sendQuery();
-//              promptElement.value = "";
-//              
-//              isProcessing = false;
-//          };
-//      }
 
         async function getGPUInfo() {
             try {

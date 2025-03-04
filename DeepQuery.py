@@ -88,11 +88,12 @@ class WebSocketHandler:
         """
         self.connected_clients.add(websocket)
         try:
-            while True:
-                if not self.log_queue.empty():
+            async for message in websocket:
+                if message == "QueryComplete":
+                    self.logger.info("[WebSocket] 收到前端 QueryComplete 信号")
+                elif not self.log_queue.empty():
                     log_entry = await self.log_queue.get()
                     await websocket.send(log_entry)
-                await asyncio.sleep(0.1)
         except websockets.exceptions.ConnectionClosedOK:
             pass
         finally:
@@ -161,22 +162,36 @@ class APIRouterHandler:
 
     async def start_voice_recognition(self):
         """启动语音识别任务"""
+        if not self.is_voice_active:
+            return
+
         self.voice_service_task = create_task(self.voice_service.start_listening()) 
         while self.is_voice_active:
             try:
                 prompt = await self.voice_service.audio_queue.get()
                 self.logger.info(f"[Voice] 处理语音输入: {prompt}")
                 self.all_messages.append({"role": "user", "content": prompt})
+                # 推送给前端
                 for client in self.ws_handler.connected_clients:
                    try:
                        await client.send(f"VoicePrompt: {prompt}")
                    except Exception as e:
                        self.logger.error(f"[WebSocket] 发送失败: {e}")
+
+#               # 等待前端查询完成
+#               async with websockets.connect('ws://localhost:8765') as ws:
+#                   while True:
+#                       message = await ws.recv()
+#                       if message == "QueryComplete":
+#                           self.logger.info("[Voice] 收到前端查询完成信号，继续监听")
+#                           break
+                       
             except asyncio.CancelledError:
                 self.logger.info(f"[Voice] 语音识别任务被取消")
                 break
             except Exception as e:
                 self.logger.error(f"[Voice] 处理语音输入出错: {e}")
+                await asyncio.sleep(1)
                 
     def setup_routes(self):
         """Configures all API endpoints."""
@@ -695,23 +710,29 @@ class WebSocketLogHandler(logging.Handler):
 #endregion
 
 # 新增语音服务类
-#region VoiceRecognitionService
 class VoiceRecognitionService:
     def __init__(self, logger):
         self.logger = logger
         self.recognizer = sr.Recognizer()
         self.is_listening = True
         self.audio_queue = Queue()
-        self.should_exit = False
         self.last_query = ""
         self.full_query = ""
-        self.has_started = False  # 提升到外层作用域
-        self.unrecognized_count = 0  # 初始化计数器
+        self.has_started = False
+        self.unrecognized_count = 0
+        self.max_retries = 3  # 最大重试次数
+        self.wake_words = ["小弟", "小迪", "小D"]
     
     def stop(self):
         self.is_listening = False
-        self.should_exit = True
-        
+        self.logger.info("[Voice] 语音服务已停止")
+        # 增加清理音频队列逻辑
+        while not self.audio_queue.empty():
+            try:
+                self.audio_queue.get_nowait()
+            except QueueEmpty:
+                break
+
     def reset_state(self):
         self.full_query = ""
         self.has_started = False
@@ -719,81 +740,97 @@ class VoiceRecognitionService:
         self.logger.info("[Voice] 会话状态已重置，准备新一轮对话")        
         
     async def start_listening(self):
-        while self.is_listening and not self.should_exit:
+        while self.is_listening:
             mic = None
-            try:
-                mic = sr.Microphone()
-                with mic as source:
-                    self.recognizer.adjust_for_ambient_noise(source, duration=2)  # 增加调整时间
-                    self.logger.info("[Voice] 麦克风准备就绪")
-                    while self.is_listening and not self.should_exit:  # 添加退出条件
-                        try:
-                            self.logger.info("[Voice] 开始监听音频...")
-                            audio = await asyncio.to_thread(
-                                self.recognizer.listen,
-                                source,
-                                timeout=3,
-                                phrase_time_limit=8
-                            )
-                            self.logger.info("[Voice] 音频捕获成功，正在识别...")
-                            text = await asyncio.to_thread(
-                                self.recognizer.recognize_google,
-                                audio,
-                                language="zh-CN"
-                            )
-                            
-                            if "小弟" in text and not self.has_started:
-                                self.has_started = True
-                                self.full_query = text.split("小弟", 1)[-1].lstrip()
-                                self.logger.info(f"[Voice] 检测到'小弟'，开始记录查询: {self.full_query}")
-                                continue
-                    
-                            if text.strip() and self.has_started:
-                                self.last_query = text
-                                self.logger.info(f"[Voice] 识别结果入队: {text}")
-                                self.unrecognized_count = 0
-                                self.full_query = (self.full_query + " " + text).strip()
-                                self.logger.info(f"[Voice] 当前累积查询: {self.full_query}")
-                    
-                        except sr.UnknownValueError:
-                            self.logger.warning(f"[Voice] 无法识别语音输入 (环境噪音: {self.recognizer.energy_threshold})")
-                            self.recognizer.adjust_for_ambient_noise(source, duration=1)  # 动态调整灵敏度0
-                            self.unrecognized_count += 1
-                            
-                            # 满足退出条件时设置标志
-                            if self.has_started and self.unrecognized_count >= 2 and self.full_query:
-                                self.logger.info(f"[Voice] 连续2次未识别，提交查询: {self.full_query}")
-                                await self.audio_queue.put(self.full_query)
-                                self.reset_state()
-                                continue
+            retry_count = 0
+            while retry_count < self.max_retries and self.is_listening:
+                try:
+                    mic = sr.Microphone()
+                    with mic as source:
+                        self.recognizer.adjust_for_ambient_noise(source, duration=2)
+                        self.logger.info("[Voice] 麦克风准备就绪")
+                        retry_count = 0  # 重置重试计数
+                        while self.is_listening:
+                            try:
+                                self.logger.info("[Voice] 开始监听音频...")
+                                audio = await asyncio.to_thread(
+                                    self.recognizer.listen,
+                                    source,
+                                    timeout=3,
+                                    phrase_time_limit=8
+                                )
+                                self.logger.info("[Voice] 音频捕获成功，正在识别...")
+                                text = await asyncio.to_thread(
+                                    self.recognizer.recognize_google,
+                                    audio,
+                                    language="zh-CN"
+                                )
                                 
-                        except sr.WaitTimeoutError:
-                            if self.has_started and self.full_query:
-                                await self.audio_queue.put(self.full_query)
-                                self.reset_state()
+                                wake_word_detected = None
+                                for wake_word in self.wake_words:
+                                    if wake_word in text and not self.has_started:
+                                        wake_word_detected = wake_word
+                                        break
+                                if wake_word_detected:
+                                    self.has_started = True
+                                    self.full_query = text.split(wake_word_detected, 1)[-1].lstrip()
+                                    self.logger.info(f"[Voice] 检测到唤醒词'{wake_word_detected}'，开始记录查询: {self.full_query}")
+                                    continue
+                        
+                                if text.strip() and self.has_started:
+                                    self.last_query = text
+                                    self.logger.info(f"[Voice] 识别结果入队: {text}")
+                                    self.unrecognized_count = 0
+                                    self.full_query = (self.full_query + " " + text).strip()
+                                    self.logger.info(f"[Voice] 当前累积查询: {self.full_query}")
+                        
+                            except sr.UnknownValueError:
+                                self.logger.warning(f"[Voice] 无法识别语音输入 (环境噪音: {self.recognizer.energy_threshold})")
+                                self.recognizer.adjust_for_ambient_noise(source, duration=1)
+                                self.unrecognized_count += 1
+                                
+                                if self.has_started and self.unrecognized_count >= 2 and self.full_query:
+                                    self.logger.info(f"[Voice] 连续2次未识别，提交查询: {self.full_query}")
+                                    await self.audio_queue.put(self.full_query)
+                                    self.reset_state()
+                                    continue
+                                    
+                            except sr.WaitTimeoutError:
+                                if self.has_started and self.full_query and self.unrecognized_count >= 2:
+                                    await self.audio_queue.put(self.full_query)
+                                    self.reset_state()
+                                    continue
+                                
+                            except sr.RequestError as e:
+                                self.logger.error(f"[Voice] 识别服务暂不可用: {str(e)}")
+                                await asyncio.sleep(3)
                                 continue
-                            
-                        except sr.RequestError as e:
-                            self.logger.error(f"[Voice] 识别服务暂不可用: {str(e)}")
-                            await asyncio.sleep(3)  # 服务不可用时延长重试间隔
-                            continue
-                                                
-                    # 退出外层循环
-                    if self.should_exit:
-                        self.logger.info("[Voice] 退出语音会话")
+
+                except OSError as e:
+                    self.logger.error(f"[Voice] 麦克风不可用: {str(e)}")
+                    retry_count += 1
+                    self.logger.info(f"[Voice] 尝试重启麦克风 ({retry_count}/{self.max_retries})")
+                    if mic:
+                        mic.__exit__(None, None, None)
+                        mic = None
+                    await asyncio.sleep(2)  # 等待后重试
+                    if retry_count >= self.max_retries:
+                        self.logger.error("[Voice] 麦克风重试次数耗尽，停止语音服务")
                         self.stop()
                         break
-                        
-            except OSError as e:
-                self.logger.error(f"[Voice] 麦克风不可用: {str(e)}")
-                await asyncio.sleep(2)
-            except Exception as e:
-                self.logger.error(f"[Voice] 错误: {str(e)}")
-                await asyncio.sleep(1)
-            finally:
-                if mic:
-                    mic.__exit__(None, None, None)
-                
+                except Exception as e:
+                    self.logger.error(f"[Voice] 未预期的错误: {str(e)}")
+                    await asyncio.sleep(1)
+                    break
+                finally:
+                    if mic:
+                        mic.__exit__(None, None, None)
+                        mic = None
+            
+            if not self.is_listening:
+                self.logger.info("[Voice] 退出语音服务")
+                break
+               
 def create_tray_icon():
     """Creates system tray icon with menu items.
     
