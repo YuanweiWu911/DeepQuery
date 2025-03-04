@@ -94,52 +94,61 @@
 	    let ws = null;
         let isGPUInfoVisible = false;
 	    let textarea;
-        let isSearchOn; 
-        let isReasonOn; 
+        let isSearchOn = false; 
+        let isReasonOn = false; 
 	    let isSpeechOn = false;
 	    let isVoiceActive = true;
 	    let audioElement = null;
         let voiceEventSource = null;
+        let terminalOutput;
         
         const aiResponseDiv = document.getElementById('ai-response');
 
-	// 替换可能存在的 DOMSubtreeModified 监听
+      	// 替换可能存在的 DOMSubtreeModified 监听
         function setupMutationObservers() {
-          // 监控聊天窗口更新
-          const chatObserver = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-              if (mutation.addedNodes.length) {
-                // 自动滚动到底部
-                const terminalOutput = document.getElementById('terminal-output');
-                terminalOutput.scrollTop = terminalOutput.scrollHeight;
-              }
+            // 监控聊天窗口更新
+            const chatObserver = new MutationObserver((mutations) => {
+              mutations.forEach((mutation) => {
+                if (mutation.addedNodes.length) {
+                  // 自动滚动到底部
+                  const terminalOutput = document.getElementById('terminal-output');
+                  terminalOutput.scrollTop = terminalOutput.scrollHeight;
+                }
+              });
             });
-          });
-        
-          chatObserver.observe(document.getElementById('ai-response'), {
-            childList: true,
-            subtree: true
-          });
-        
-          // 监控终端输出更新
-          const terminalObserver = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-              if (mutation.addedNodes.length) {
-                // 处理终端更新逻辑
-              }
+          
+            chatObserver.observe(document.getElementById('ai-response'), {
+              childList: true,
+              subtree: true
             });
-          });
-         }
+          
+          
+            // 监控终端输出更新
+            const terminalObserver = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    if (mutation.addedNodes.length && isTerminalVisible) {
+                        terminalOutput.scrollTop = terminalOutput.scrollHeight;
+                    }
+                });
+            });
+            terminalObserver.observe(document.getElementById('terminal-output'), {
+                childList: true,
+                subtree: true
+            });
+        }
+
+
+
         // 修改DOMContentLoaded监听器
         document.addEventListener('DOMContentLoaded', () => {
 	    setupMutationObservers();
-            const textarea = document.getElementById('prompt');
+            textarea = document.getElementById('prompt');
             const sendButton = document.getElementById('send-button');
             const saveButton = document.getElementById('save-button'); 
             terminalOutput = document.getElementById('terminal-output');
             searchToggle = document.getElementById('search-toggle');
             reasonToggle = document.getElementById('reason-toggle'); 
-            const speechButton = document.getElementById('speech-button');
+            speechButton = document.getElementById('speech-button');
 
             // 自动启动语音识别
             toggleVoice();  // 初始化状态
@@ -151,32 +160,43 @@
                 const newLine = document.createElement('p');
                 newLine.textContent = event.data;
                 terminalOutput.appendChild(newLine);
-                
-                // 自动滚动到底部
                 terminalOutput.scrollTop = terminalOutput.scrollHeight;
 
-                if (event.data.startsWith("VoicePrompt:")) {
-                const prompt = event.data.replace("VoicePrompt: ", "");
-                document.getElementById('prompt').value = prompt;
-                sendQuery();
+//              if (event.data.startsWith("VoicePrompt:")) {
+//              const prompt = event.data.replace("VoicePrompt: ", "");
+//              document.getElementById('prompt').value = prompt;
+//              sendQuery();
+//              } else if (event.data.startsWith("[front end] query end")) {
+//                  // 查询完成后通知后端
+//                  socket.send("QueryComplete");
+//                  console.log("Sent QueryComplete to backend");
+//              }
+
+                if (event.data.startsWith("VoicePrompt:") && isVoiceActive) { // 检查语音是否激活
+                    const prompt = event.data.replace("VoicePrompt: ", "");
+                    document.getElementById('prompt').value = prompt;
+                    sendQuery();
                 } else if (event.data.startsWith("[front end] query end")) {
-                    // 查询完成后通知后端
                     socket.send("QueryComplete");
                     console.log("Sent QueryComplete to backend");
                 }
+
             });
 
             socket.addEventListener('error', (event) => {
                 console.error('WebSocket error:', event);
+                terminalOutput.appendChild(createErrorLine('WebSocket连接错误'));
             });
 
             socket.addEventListener('open', (event) => {
                 console.log('WebSocket connection established');
+                terminalOutput.appendChild(createInfoLine('WebSocket连接已建立'));
             });
 
             socket.addEventListener('close', () => {
                 isSocketActive = false;
                 console.log('WebSocket connection closed');
+                terminalOutput.appendChild(createErrorLine('WebSocket连接已关闭'));
             });
 
             // Listen for the keydown event of the text box
@@ -502,42 +522,89 @@
             }
         }
 
-        function toggleVoice() {
+//      function toggleVoice() {
+//          isVoiceActive = !isVoiceActive;
+//          const voiceButton = document.getElementById('voice-toggle');
+//          voiceButton.textContent = isVoiceActive ? 'Voice On' : 'Voice Off';
+//          voiceButton.classList.toggle('on', isVoiceActive);
+//          voiceButton.classList.toggle('off', !isVoiceActive);
+//          
+//          isSpeechOn = isVoiceActive;
+//          const speechButton = document.getElementById('speech-button');
+//          speechButton.classList.toggle('on', isVoiceActive);
+//          speechButton.classList.toggle('off', !isVoiceActive);
+
+//          if (isVoiceActive) {
+//              // 发送请求到后端开启语音识别
+//              fetch('/toggle-voice', {
+//                  method: 'POST',
+//                  headers: {'Content-Type': 'application/json'},
+//                  body: JSON.stringify({ isVoiceActive: true })
+//              })
+//              .then(response => response.json())
+//              .then(data => {
+//                  if (data.status === 'success') {
+//                      console.log('Voice recognition enabled');
+//                  }
+//              })
+//              .catch(error => console.error('Error enabling voice:', error));
+//          } else {
+//              // 发送请求到后端关闭语音识别
+//              fetch('/toggle-voice', {
+//                  method: 'POST',
+//                  headers: {'Content-Type': 'application/json'},
+//                  body: JSON.stringify({ isVoiceActive: false })
+//              })
+//              .then(response => response.json())
+//              .then(data => {
+//                  if (data.status === 'success') {
+//                      console.log('Voice recognition disabled');
+//                      stopSpeech(); // 停止任何正在播放的语音
+//                  }
+//              })
+//              .catch(error => console.error('Error disabling voice:', error));
+//          }
+//      }
+
+
+        async function toggleVoice() {
             isVoiceActive = !isVoiceActive;
             const voiceButton = document.getElementById('voice-toggle');
             voiceButton.textContent = isVoiceActive ? 'Voice On' : 'Voice Off';
             voiceButton.classList.toggle('on', isVoiceActive);
-            
-            isSpeechOn = isVoiceActive;
-            document.getElementById('speech-button').classList.toggle('on', isVoiceActive);
-            
-            if (isVoiceActive) {
-                startVoiceRecognition();
-            } else {
-                if (voiceEventSource) {
-                    voiceEventSource.close();
-                    voiceEventSource = null;
-                }
-                stopSpeech();
-            }
-        }
+            voiceButton.classList.toggle('off', !isVoiceActive);
         
-        // 添加语音切换函数
-        function toggleSpeech() {
-            isSpeechOn = !isSpeechOn;
+            // 同步语音播放状态
+            isSpeechOn = isVoiceActive;
             const speechButton = document.getElementById('speech-button');
-            
-            if (isSpeechOn) {
-                speechButton.classList.remove('off');
-                speechButton.classList.add('on');
-                speakCurrentResponse();
-            } else {
-                speechButton.classList.remove('on');
-                speechButton.classList.add('off');
-                stopSpeech();
+            speechButton.classList.toggle('on', isVoiceActive);
+            speechButton.classList.toggle('off', !isVoiceActive);
+        
+            try {
+                const response = await fetch('/toggle-voice', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ isVoiceActive: isVoiceActive })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    console.log(`Voice recognition ${isVoiceActive ? 'enabled' : 'disabled'}`);
+                    if (!isVoiceActive) {
+                        stopSpeech(); // 停止语音播放
+                    }
+                } else {
+                    throw new Error('Failed to toggle voice');
+                }
+            } catch (error) {
+                console.error('Error toggling voice:', error);
+                // 回滚状态
+                isVoiceActive = !isVoiceActive;
+                voiceButton.textContent = isVoiceActive ? 'Voice On' : 'Voice Off';
+                voiceButton.classList.toggle('on', isVoiceActive);
+                voiceButton.classList.toggle('off', !isVoiceActive);
             }
         }
-       
+
         async function speakCurrentResponse() {
             const aiResponses = document.querySelectorAll('.ai-response-normal');
             if (!aiResponses.length) return;

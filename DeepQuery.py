@@ -43,6 +43,9 @@ import pystray
 import signal
 import threading
 import edge_tts
+import pygame
+#import pyaudio
+#from pydub import AudioSegment
 import speech_recognition as sr
 from asyncio import Queue, create_task
 from datetime import datetime
@@ -146,7 +149,7 @@ class APIRouterHandler:
         self.voice_task = None
         self.is_voice_active = True  # 默认开启语音识别
         self.voice_lock = Lock()
-        self.voice_service = VoiceRecognitionService(logger)
+        self.voice_service = VoiceRecognitionService(logger, ws_handler = ws_handler)
         self.voice_service_task = None
         self._load_config()
         self.logger.info("[System] Initializing APIRouterHandler")
@@ -163,7 +166,16 @@ class APIRouterHandler:
     async def start_voice_recognition(self):
         """启动语音识别任务"""
         if not self.is_voice_active:
+            self.logger.info("[Voice] 语音识别未激活，跳过启动")
             return
+
+        # 如果已有任务正在运行，先取消
+        if self.voice_service_task and not self.voice_service_task.done():
+            self.voice_service_task.cancel()
+            try:
+                await self.voice_service_task
+            except asyncio.CancelledError:
+                self.logger.info("[Voice] 旧语音任务已取消")
 
         self.voice_service_task = create_task(self.voice_service.start_listening()) 
         while self.is_voice_active:
@@ -178,14 +190,6 @@ class APIRouterHandler:
                    except Exception as e:
                        self.logger.error(f"[WebSocket] 发送失败: {e}")
 
-#               # 等待前端查询完成
-#               async with websockets.connect('ws://localhost:8765') as ws:
-#                   while True:
-#                       message = await ws.recv()
-#                       if message == "QueryComplete":
-#                           self.logger.info("[Voice] 收到前端查询完成信号，继续监听")
-#                           break
-                       
             except asyncio.CancelledError:
                 self.logger.info(f"[Voice] 语音识别任务被取消")
                 break
@@ -209,9 +213,10 @@ class APIRouterHandler:
             data = await request.json()
             self.is_voice_active = data.get("isVoiceActive", False)
             self.logger.info(f"[Voice] 语音识别状态切换为: {self.is_voice_active}")
+            
             if self.is_voice_active:
                 self.logger.info("[Voice] 语音识别已激活")
-                # 取消已有任务（避免重复）
+                # 取消旧任务,并启动新任务
                 if self.voice_task and not self.voice_task.done():
                     self.voice_task.cancel()
                 if self.voice_service_task:
@@ -219,11 +224,21 @@ class APIRouterHandler:
                 # 启动新任务
                 self.voice_task = create_task(self.start_voice_recognition())
             else:
+                self.logger.info("[Voice] 语音识别已禁用")
                 self.voice_service.stop()
-                if self.voice_task:
+                if self.voice_task and not self.voice_task.done():
                     self.voice_task.cancel()
-                if self.voice_service_task:
+                if self.voice_service_task and not self.voice_service_task.done():
                     self.voice_service_task.cancel()
+                # 等待任务清理完成
+                try:
+                    if self.voice_task:
+                        await self.voice_task
+                    if self.voice_service_task:
+                        await self.voice_service_task
+                except asyncio.CancelledError:
+                    self.logger.info("[Voice] 所有语音任务已清理")
+                
             return JSONResponse(content={"status": "success"})
         
         @self.app.post("/query")
@@ -370,24 +385,7 @@ class APIRouterHandler:
                     except json.JSONDecodeError as e:
                         self.logger.error(f"[System] JSON decode error: {e}")
                         return JSONResponse(content={"error": f"JSON decode error: {e}"}, status_code=500)
-           
-                # Parse the <think> tag
-#               parts = re.split(r'(<think>.*?</think>)', generated_response, flags=re.IGNORECASE | re.DOTALL)
-#               for part in parts:
-#                   if part.startswith('<think>') and part.endswith('</think>'):
-#                       think_content = part[7:-8]  # Remove the <think> tag
-#                   elif part:
-#                       ai_response = ""  # 初始化变量                        
-#                       for part in parts:
-#                           if ...:
-#                               ...
-#                           elif part:
-#                               ai_response += part.replace("\n", "").strip()
 
-#               if ai_response:
-#                   self.logger.info(f"[AI response] {ai_response}")
-
-# 替换原有的 <think> 标签解析逻辑
                 try:
                     # 尝试提取 <think> 内容（如果存在）
                     think_content = ""
@@ -711,7 +709,7 @@ class WebSocketLogHandler(logging.Handler):
 
 # 新增语音服务类
 class VoiceRecognitionService:
-    def __init__(self, logger):
+    def __init__(self, logger, ws_handler=None):
         self.logger = logger
         self.recognizer = sr.Recognizer()
         self.is_listening = True
@@ -722,6 +720,7 @@ class VoiceRecognitionService:
         self.unrecognized_count = 0
         self.max_retries = 3  # 最大重试次数
         self.wake_words = ["小弟", "小迪", "小D"]
+        self.ws_handler = ws_handler
     
     def stop(self):
         self.is_listening = False
@@ -730,14 +729,86 @@ class VoiceRecognitionService:
         while not self.audio_queue.empty():
             try:
                 self.audio_queue.get_nowait()
-            except QueueEmpty:
+            except asyncio.QueueEmpty:
                 break
+        self.reset_state()
 
     def reset_state(self):
         self.full_query = ""
         self.has_started = False
         self.unrecognized_count = 0
         self.logger.info("[Voice] 会话状态已重置，准备新一轮对话")        
+
+    async def say_response(self, text, voice="zh-CN-YunyangNeural"):
+        """使用 edge_tts 生成音频流并在后端直接播放"""
+        try:
+            # 生成 MP3 音频流
+            communicate = edge_tts.Communicate(text, voice)
+            audio_stream = BytesIO()
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    audio_stream.write(chunk["data"])
+            audio_stream.seek(0)
+
+            # 使用 pygame 播放音频
+            pygame.mixer.init()
+            pygame.mixer.music.load(audio_stream)
+            pygame.mixer.music.play()
+    
+            # 等待音频播放完成
+            while pygame.mixer.music.get_busy():
+                await asyncio.sleep(0.1)
+            self.logger.info(f"[Voice] 在后端播放音频: {text}")
+
+        except Exception as e:
+            self.logger.error(f"[Voice] 音频播放失败: {str(e)}")
+
+#   async def say_response(self, text, voice="zh-CN-YunyangNeural"):
+#       """使用 edge_tts 生成音频流并通过 WebSocket 通知前端播放"""
+#       try:
+#           # 生成音频流
+#           communicate = edge_tts.Communicate(text, voice)
+#           audio_stream = BytesIO()
+#           async for chunk in communicate.stream():
+#               if chunk["type"] == "audio":
+#                   audio_stream.write(chunk["data"])
+#           audio_stream.seek(0)
+#           audio_data = audio_stream.getvalue()
+
+#           # 将音频数据通过 WebSocket 发送到前端
+#           if self.ws_handler and self.ws_handler.connected_clients:
+#               audio_base64 = base64.b64encode(audio_data).decode('utf-8')  # 将音频转为 base64
+#               message = f"PlayAudio:{audio_base64}"
+#               for client in self.ws_handler.connected_clients:
+#                   try:
+#                       await client.send(message)
+#                       self.logger.info(f"[Voice] 发送音频到前端播放: {text}")
+#                   except Exception as e:
+#                       self.logger.error(f"[WebSocket] 发送音频失败: {e}")
+#           else:
+#               self.logger.warning("[Voice] 无活跃 WebSocket 客户端，无法播放音频")
+
+#       except Exception as e:
+#           self.logger.error(f"[Voice] 音频生成失败: {str(e)}")
+#
+#   async def say_response(self, text, voice="zh-CN-YunyangNeural"):
+#       """使用语音合成播放回复"""
+#       try:
+#           communicate = edge_tts.Communicate(text, voice)
+#           audio_stream = BytesIO()
+#           async for chunk in communicate.stream():
+#               if chunk["type"] == "audio":
+#                   audio_stream.write(chunk["data"])
+#           audio_stream.seek(0)
+
+#           # 保存临时音频文件并播放
+#           with open("temp_response.mp3", "wb") as f:
+#               f.write(audio_stream.getvalue())
+#           subprocess.run(["start", "temp_response.mp3"], shell=True)  # Windows 示例，Linux/Mac需调整
+#           self.logger.info(f"[Voice] 播放语音回复: {text}")
+#       except Exception as e:
+#           self.logger.error(f"[Voice] 语音合成失败: {str(e)}")    
+    
         
     async def start_listening(self):
         while self.is_listening:
@@ -756,16 +827,19 @@ class VoiceRecognitionService:
                                 audio = await asyncio.to_thread(
                                     self.recognizer.listen,
                                     source,
-                                    timeout=3,
-                                    phrase_time_limit=8
+                                    timeout=1,
+                                    phrase_time_limit=5
                                 )
+                                if not self.is_listening:
+                                    break
                                 self.logger.info("[Voice] 音频捕获成功，正在识别...")
                                 text = await asyncio.to_thread(
                                     self.recognizer.recognize_google,
                                     audio,
                                     language="zh-CN"
                                 )
-                                
+                                if not self.is_listening:
+                                    break
                                 wake_word_detected = None
                                 for wake_word in self.wake_words:
                                     if wake_word in text and not self.has_started:
@@ -775,6 +849,7 @@ class VoiceRecognitionService:
                                     self.has_started = True
                                     self.full_query = text.split(wake_word_detected, 1)[-1].lstrip()
                                     self.logger.info(f"[Voice] 检测到唤醒词'{wake_word_detected}'，开始记录查询: {self.full_query}")
+                                    await self.say_response("我在")
                                     continue
                         
                                 if text.strip() and self.has_started:
@@ -794,16 +869,22 @@ class VoiceRecognitionService:
                                     await self.audio_queue.put(self.full_query)
                                     self.reset_state()
                                     continue
-                                    
+                                if not self.is_listening:
+                                    break
+                                
                             except sr.WaitTimeoutError:
                                 if self.has_started and self.full_query and self.unrecognized_count >= 2:
                                     await self.audio_queue.put(self.full_query)
                                     self.reset_state()
                                     continue
+                                if not self.is_listening:
+                                    break
                                 
                             except sr.RequestError as e:
                                 self.logger.error(f"[Voice] 识别服务暂不可用: {str(e)}")
                                 await asyncio.sleep(3)
+                                if not self.is_listening:
+                                    break
                                 continue
 
                 except OSError as e:
@@ -814,14 +895,19 @@ class VoiceRecognitionService:
                         mic.__exit__(None, None, None)
                         mic = None
                     await asyncio.sleep(2)  # 等待后重试
+                    
                     if retry_count >= self.max_retries:
                         self.logger.error("[Voice] 麦克风重试次数耗尽，停止语音服务")
                         self.stop()
                         break
+                    if not self.is_listening:
+                        break
+                    
                 except Exception as e:
                     self.logger.error(f"[Voice] 未预期的错误: {str(e)}")
                     await asyncio.sleep(1)
                     break
+                
                 finally:
                     if mic:
                         mic.__exit__(None, None, None)
@@ -930,6 +1016,7 @@ async def main():
     async with websockets.serve(ws_handler.handle_ws, "localhost", 8765) as ws_server:
         # 正确启动Uvicorn服务
         server_task = asyncio.create_task(server.serve())
+        logger.info("[WebSocket] Server started at ws://localhost:8765")
         
         # 打开浏览器
         webbrowser.open('http://localhost:8000/')

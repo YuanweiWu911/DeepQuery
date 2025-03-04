@@ -322,12 +322,14 @@ select {
 }
 
 #voice-toggle {
-    background-color: #4CAF50;
-    margin-left: 10px;
-    transition: all 0.3s;
+    position: relative;
+    background-color: white;
+    bottom: 5px;
+    margin-left: 0px;
+    margin-right: 5px;
 }
 
 #voice-toggle.on {
-    background-color: #ff4444;
-    box-shadow: 0 0 8px #ff0000;
+    background-color: lightgreen;
+    box-shadow: 0 0 8px lightgreen;
 }
