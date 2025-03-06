@@ -64,7 +64,6 @@
             <button id="search-toggle" class="off" onclick="toggleSearch()">Search</button>
             <!-- Reason button -->
             <button id="reason-toggle" class="off" onclick="toggleReason()">Reason</button>
-            <button id="speech-button" class="off" onclick="toggleSpeech()">Speech</button>
         </div>
     </div>
 
@@ -87,19 +86,19 @@
          * @description Initializes WebSocket connection and sets up message handlers
          */
 	    let socket = null;
-        let context = "";
-        let isRemote = false; 
         let utterance = null; 
+	    let audioElement = null;
+        let voiceEventSource = null;
+        let isRemote = false; 
         let isTerminalVisible = false;
-	    let ws = null;
         let isGPUInfoVisible = false;
-	    let textarea;
+        let isSocketActive = true;
         let isSearchOn = false; 
         let isReasonOn = false; 
 	    let isSpeechOn = false;
 	    let isVoiceActive = true;
-	    let audioElement = null;
-        let voiceEventSource = null;
+        let context = "";
+	    let textarea;
         let terminalOutput;
         
         const aiResponseDiv = document.getElementById('ai-response');
@@ -137,40 +136,24 @@
             });
         }
 
-
-
         // 修改DOMContentLoaded监听器
         document.addEventListener('DOMContentLoaded', () => {
 	    setupMutationObservers();
-            textarea = document.getElementById('prompt');
             const sendButton = document.getElementById('send-button');
             const saveButton = document.getElementById('save-button'); 
-            terminalOutput = document.getElementById('terminal-output');
             searchToggle = document.getElementById('search-toggle');
             reasonToggle = document.getElementById('reason-toggle'); 
-            speechButton = document.getElementById('speech-button');
-
+            const textarea = document.getElementById('prompt');
+            terminalOutput = document.getElementById('terminal-output');
             // 自动启动语音识别
             toggleVoice();  // 初始化状态
-
             // WebSocket初始化逻辑...
             socket = new WebSocket('ws://localhost:8765');
-            
             socket.addEventListener('message', (event) => {
                 const newLine = document.createElement('p');
                 newLine.textContent = event.data;
                 terminalOutput.appendChild(newLine);
                 terminalOutput.scrollTop = terminalOutput.scrollHeight;
-
-//              if (event.data.startsWith("VoicePrompt:")) {
-//              const prompt = event.data.replace("VoicePrompt: ", "");
-//              document.getElementById('prompt').value = prompt;
-//              sendQuery();
-//              } else if (event.data.startsWith("[front end] query end")) {
-//                  // 查询完成后通知后端
-//                  socket.send("QueryComplete");
-//                  console.log("Sent QueryComplete to backend");
-//              }
 
                 if (event.data.startsWith("VoicePrompt:") && isVoiceActive) { // 检查语音是否激活
                     const prompt = event.data.replace("VoicePrompt: ", "");
@@ -180,31 +163,31 @@
                     socket.send("QueryComplete");
                     console.log("Sent QueryComplete to backend");
                 }
-
             });
-
             socket.addEventListener('error', (event) => {
                 console.error('WebSocket error:', event);
                 terminalOutput.appendChild(createErrorLine('WebSocket连接错误'));
             });
-
             socket.addEventListener('open', (event) => {
                 console.log('WebSocket connection established');
                 terminalOutput.appendChild(createInfoLine('WebSocket连接已建立'));
             });
-
             socket.addEventListener('close', () => {
                 isSocketActive = false;
                 console.log('WebSocket connection closed');
                 terminalOutput.appendChild(createErrorLine('WebSocket连接已关闭'));
             });
-
             // Listen for the keydown event of the text box
             textarea.addEventListener('keydown', function (event) {
                 if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();
                     sendQuery();
                 }
+            });
+            // 添加 MutationObserver 清理逻辑
+            window.addEventListener('unload', () => {
+                if (chatObserver) chatObserver.disconnect();
+                if (terminalObserver) terminalObserver.disconnect();
             });
         });
 
@@ -223,9 +206,11 @@
         // Handles query submission and response processing
         async function sendQuery() {
             const controller = new AbortController();
-            const aiResponseDiv = document.getElementById('ai-response').classList.remove('hidden');
+            const aiResponseDiv = document.getElementById('ai-response');
+            aiResponseDiv.classList.remove('hidden');
             const textarea = document.getElementById('prompt');
-            const thinkingIcon = document.getElementById('thinking-icon').classList.remove('hidden');
+            const thinkingIcon = document.getElementById('thinking-icon');
+            thinkingIcon.classList.remove('hidden');
             const selectedModel = document.getElementById('model-select').value;
             const prompt = textarea.value;
 
@@ -270,7 +255,7 @@
                     userQuestion.classList.add('user-question');
                     userQuestion.innerHTML = `${marked.parse('User')} ${marked.parse(prompt)}`;
                     aiResponseDiv.appendChild(userQuestion);
-        
+
                     const aiResponseText = result.response;
                     const thinkingStartIndex = aiResponseText.indexOf('<think>');
                     const thinkingEndIndex = aiResponseText.indexOf('</think>');
@@ -299,16 +284,10 @@
                         aiResponseDiv.appendChild(aiNormalResponse);
                     }
                     context = result.context;
-                    // 新增：如果语音按钮处于激活状态则自动播放
-                    if (isVoiceActive) {
-                        await speakCurrentResponse();
-                    }
                 }
             } catch (error) {
                 console.error('Error sending query:', error);
-            }
-
-            finally {
+            }finally {
             controller.abort();
             // Hide the thinking icon after the response is received
             document.getElementById('thinking-icon').classList.add('hidden');
@@ -522,51 +501,6 @@
             }
         }
 
-//      function toggleVoice() {
-//          isVoiceActive = !isVoiceActive;
-//          const voiceButton = document.getElementById('voice-toggle');
-//          voiceButton.textContent = isVoiceActive ? 'Voice On' : 'Voice Off';
-//          voiceButton.classList.toggle('on', isVoiceActive);
-//          voiceButton.classList.toggle('off', !isVoiceActive);
-//          
-//          isSpeechOn = isVoiceActive;
-//          const speechButton = document.getElementById('speech-button');
-//          speechButton.classList.toggle('on', isVoiceActive);
-//          speechButton.classList.toggle('off', !isVoiceActive);
-
-//          if (isVoiceActive) {
-//              // 发送请求到后端开启语音识别
-//              fetch('/toggle-voice', {
-//                  method: 'POST',
-//                  headers: {'Content-Type': 'application/json'},
-//                  body: JSON.stringify({ isVoiceActive: true })
-//              })
-//              .then(response => response.json())
-//              .then(data => {
-//                  if (data.status === 'success') {
-//                      console.log('Voice recognition enabled');
-//                  }
-//              })
-//              .catch(error => console.error('Error enabling voice:', error));
-//          } else {
-//              // 发送请求到后端关闭语音识别
-//              fetch('/toggle-voice', {
-//                  method: 'POST',
-//                  headers: {'Content-Type': 'application/json'},
-//                  body: JSON.stringify({ isVoiceActive: false })
-//              })
-//              .then(response => response.json())
-//              .then(data => {
-//                  if (data.status === 'success') {
-//                      console.log('Voice recognition disabled');
-//                      stopSpeech(); // 停止任何正在播放的语音
-//                  }
-//              })
-//              .catch(error => console.error('Error disabling voice:', error));
-//          }
-//      }
-
-
         async function toggleVoice() {
             isVoiceActive = !isVoiceActive;
             const voiceButton = document.getElementById('voice-toggle');
@@ -576,9 +510,6 @@
         
             // 同步语音播放状态
             isSpeechOn = isVoiceActive;
-            const speechButton = document.getElementById('speech-button');
-            speechButton.classList.toggle('on', isVoiceActive);
-            speechButton.classList.toggle('off', !isVoiceActive);
         
             try {
                 const response = await fetch('/toggle-voice', {
@@ -605,44 +536,6 @@
             }
         }
 
-        async function speakCurrentResponse() {
-            const aiResponses = document.querySelectorAll('.ai-response-normal');
-            if (!aiResponses.length) return;
-            
-            const lastResponse = aiResponses[aiResponses.length - 1];
-
-            const text = new DOMParser().parseFromString(lastResponse.innerHTML, "text/html").body.textContent;
-        
-            try {
-                const response = await fetch('/synthesize-speech', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ text: text })
-                });
-                
-                if (!response.ok) throw new Error('合成失败');
-                
-                if (audioElement) {
-                    audioElement.pause();
-                }
-                
-                const audioBlob = await response.blob();
-                const audioUrl = URL.createObjectURL(audioBlob);
-                audioElement = new Audio(audioUrl);
-                audioElement.play();
-                
-                audioElement.onended = () => {
-                    isSpeechOn = false;
-                    speechButton.classList.remove('on');
-                    speechButton.classList.add('off');
-                };
-                
-            } catch (error) {
-                console.error('语音播放失败:', error);
-                alert('语音合成失败，请检查控制台');
-            }
-        }
-        
         function stopSpeech() {
             if (audioElement) {
                 audioElement.pause();
