@@ -76,6 +76,8 @@ class AudioUtil:
 
         """
         try:
+            if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+                pygame.mixer.music.stop()
             communicate = edge_tts.Communicate(text, voice)
             audio_stream = BytesIO()
             async for chunk in communicate.stream():
@@ -260,6 +262,10 @@ class APIRouterHandler:
             self.is_voice_active = data.get("isVoiceActive", False)
             self.logger.info(f"[Voice] 语音识别状态切换为: {self.is_voice_active}")
             
+            # 如果关闭语音，停止当前播放
+            if not self.is_voice_active and pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+                pygame.mixer.music.stop() 
+
             if self.is_voice_active:
                 self.logger.info("[Voice] 语音识别已激活")
                 # 取消旧任务,并启动新任务
@@ -694,7 +700,25 @@ class ChatHandler:
         try:
             # 提取有效响应内容（移除<think>标签等内容）
             ai_response = re.sub(r'<think>.*?</think>', '', response_text, flags=re.DOTALL).strip()
-            if ai_response:
+                        
+            # 清理Markdown格式符号
+            markdown_patterns = [
+                r'#{1,6}\s*',  # 标题
+                r'\*{1,3}',    # 加粗/斜体
+                r'`{1,3}',     # 代码块
+                r'!\[.*?\]\(.*?\)',  # 图片
+                r'\[.*?\]\(.*?\)',   # 链接
+                r'-{3,}',      # 分割线
+                r'>{1,}',      # 引用
+                r'\|\|.*?\|\|' # 删除线
+            ]
+            for pattern in markdown_patterns:
+                ai_response = re.sub(pattern, '', ai_response)
+            
+            # 去除多余的空格和换行
+            ai_response = ' '.join(ai_response.split())
+            
+            if ai_response and self.is_voice_active:
                 # 调用语音合成播放
 #               await self.audio_util.say_response(ai_response)
                 asyncio.creat_task(self.audio_util.say_response(ai_response))
@@ -798,57 +822,69 @@ class VoiceRecognitionService:
                             try:
                                 self.logger.info("[Voice] 开始监听音频...")
                                 audio = await asyncio.to_thread(
-                                    self.recognizer.listen,
-                                    source,
-                                    timeout=2,
-                                    phrase_time_limit=3
+                                self.recognizer.listen,
+                                source,
+                                timeout=1,
+                                phrase_time_limit=2
                                 )
                                 if not self.is_listening:
                                     break
+
                                 self.logger.info("[Voice] 音频捕获成功，正在识别...")
                                 text = await asyncio.to_thread(
-                                    self.recognizer.recognize_google,
-                                    audio,
-                                    language="zh-CN"
+                                self.recognizer.recognize_google,
+                                audio,
+                                language="zh-CN"
                                 )
                                 if not self.is_listening:
                                     break
+                                # 唤醒词检测逻辑
                                 wake_word_detected = None
                                 for wake_word in self.wake_words:
-                                    if wake_word in text and not self.has_started:
+                                    if wake_word in text:
                                         wake_word_detected = wake_word
                                         break
+
+                                # 如果检测到唤醒词
                                 if wake_word_detected:
-                                    self.has_started = True
-                                    text = text.split(wake_word_detected, 1)[-1].lstrip()
-                                    # 修改后代码
-                                    if wake_word_detected in text:
+                                    if not self.has_started:
+                                        self.has_started = True
+                                        # 使用remove_leading_wake_words去除所有开头的唤醒词
                                         self.full_query = self.remove_leading_wake_words(text, wake_word_detected)
+                                        self.logger.info(f"[Voice] 检测到唤醒词'{wake_word_detected}'，开始记录查询: {self.full_query}")
+                                        await self.audio_util.say_response("我在")
                                     else:
-                                        self.full_query = text.strip()
-                                    self.logger.info(f"[Voice] 检测到唤醒词'{wake_word_detected}'，开始记录查询: {self.full_query}")
-                                    await self.audio_util.say_response("我在")
-                                    continue                        
-                                
-                                if text.strip() and self.has_started:
-                                    self.logger.info(f"[Voice] 识别结果入队: {text}")
-                                    self.unrecognized_count = 0
+                                        # 如果已经处于对话状态，去除所有唤醒词
+                                        self.full_query = self.remove_leading_wake_words(text, wake_word_detected)
+                                        self.logger.info(f"[Voice] 追加查询内容: {self.full_query}")
+                                else:
+                                    # 如果没有检测到唤醒词，直接追加文本
                                     self.full_query = (self.full_query + " " + text).strip()
+                                    self.logger.info(f"[Voice] 追加查询内容: {self.full_query}")
+                                self.unrecognized_count = 0
+                                continue
+
+                                # 如果没有唤醒词但已经处于对话状态
+                                if self.has_started and text.strip():
+                                    self.full_query = (self.full_query + " " + text).strip()
+                                    self.unrecognized_count = 0
                                     self.logger.info(f"[Voice] 当前累积查询: {self.full_query}")
-                        
+
                             except sr.UnknownValueError:
                                 self.logger.warning(f"[Voice] 无法识别语音输入 (环境噪音: {self.recognizer.energy_threshold})")
                                 self.recognizer.adjust_for_ambient_noise(source, duration=1)
                                 self.unrecognized_count += 1
-                                
+
+                                # 如果连续2次无法识别且已有累积查询
                                 if self.has_started and self.unrecognized_count >= 2 and self.full_query:
                                     self.logger.info(f"[Voice] 连续2次未识别，提交查询: {self.full_query}")
                                     await self.audio_queue.put(self.full_query)
                                     self.reset_state()
                                     continue
+
                                 if not self.is_listening:
-                                    break
-                                
+                                    break 
+
                             except sr.WaitTimeoutError:
                                 if self.has_started and self.full_query and self.unrecognized_count >= 2:
                                     await self.audio_queue.put(self.full_query)

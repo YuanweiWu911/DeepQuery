@@ -7,3 +7,5 @@ websockets==15.0
 pystray>=0.19.2
 Pillow>=9.0.0
 jinja2
+pygame==2.6.1
+SpeechRecognition==3.14.1
