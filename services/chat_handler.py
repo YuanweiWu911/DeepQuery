@@ -15,6 +15,12 @@ class ChatHandler:
         self.audio_util = AudioUtil()
         self.is_voice_active = False
 
+    # 添加新方法
+    def set_voice_active(self, status: bool):
+        """设置语音状态"""
+        self.is_voice_active = status
+        self.logger.info(f"[Chat] 语音状态已更新为: {status}")
+
     def web_search(self, prompt: str) -> str:
         """Performs web search using Google Serper API.
         

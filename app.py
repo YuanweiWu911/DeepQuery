@@ -95,10 +95,12 @@ async def main():
         
         try:
             # 启动语音识别任务
+            # 检查语音识别是否激活，并创建异步任务
             if api_handler.is_voice_active:
-                api_handler.voice_task = asyncio.create_task(
+                voice_recognition_task = asyncio.create_task(
                     api_handler.start_voice_recognition()
                 )
+                setattr(api_handler, 'voice_task', voice_recognition_task)
 
             # 启动日志消费任务
             ws_task = asyncio.create_task(ws_handler.log_consumer())
@@ -110,15 +112,37 @@ async def main():
             logger.info("服务正常终止")
         finally:
             # 清理任务
-            if api_handler.voice_task:
+            tasks_to_cancel = []
+            
+            if hasattr(api_handler, 'voice_task') and api_handler.voice_task:
                 api_handler.voice_task.cancel()
-            ws_task.cancel()
-            await asyncio.gather(
-                api_handler.voice_task,
-                ws_task,
-                return_exceptions=True
-            )
-            await ws_server.close()
+                tasks_to_cancel.append(api_handler.voice_task)
+            
+            # ws_task is always created, so we can directly cancel it
+            # Check if ws_task exists and is not done before cancelling
+            # 检查ws_task是否存在且已定义
+            if 'ws_task' in locals() and ws_task and not ws_task.done():
+                ws_task.cancel()
+                tasks_to_cancel.append(ws_task)
+            
+            # Clean up tasks with error handling
+            if tasks_to_cancel:
+                try:
+                    await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
+                except Exception as e:
+                    logger.error(f"[System] Error during task cleanup: {e}")
+                finally:
+                    # Ensure all tasks are properly cleaned up
+                    for task in tasks_to_cancel:
+                        if not task.done():
+                            task.cancel()
+            
+            # Gracefully close WebSocket server
+            try:
+                ws_server.close()  # WebSocket server的close()方法不是异步的，移除await
+                logger.info("[WebSocket] Server closed successfully")
+            except Exception as e:
+                logger.error(f"[WebSocket] Error during server shutdown: {e}")
             await server.shutdown()
             
     # 清理托盘图标

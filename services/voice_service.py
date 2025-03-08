@@ -2,6 +2,7 @@ import speech_recognition as sr
 from asyncio import Queue
 import asyncio
 from .audio_util import AudioUtil
+import socket
 
 class VoiceRecognitionService:
     def __init__(self, logger, ws_handler=None):
@@ -145,9 +146,14 @@ class VoiceRecognitionService:
                             await asyncio.sleep(delay)
                             retry_count += 1
                             # 检查网络连接
-                            if not await self.check_network_connection():
+                            # 添加网络连接检查方法
+                            try:
+                                socket.create_connection(("8.8.8.8", 53), timeout=3)
+                                return True
+                            except OSError:
                                 await self.audio_util.say_response("网络连接失败")
                                 self.stop()
+                                return False
                             if not self.is_listening:
                                 break
                             continue

@@ -26,7 +26,7 @@ class AudioUtil:
             communicate = edge_tts.Communicate(text, voice)
             audio_stream = BytesIO()
             async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
+                if chunk["type"] == "audio" and "data" in chunk:
                     audio_stream.write(chunk["data"])
             audio_stream.seek(0)
 

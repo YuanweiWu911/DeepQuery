@@ -110,6 +110,8 @@ class APIRouterHandler:
         async def toggle_voice(request: Request):
             data = await request.json()
             self.is_voice_active = data.get("isVoiceActive", False)
+            # 同步 ChatHandler 的语音状态
+            self.chat_handler.set_voice_active(self.is_voice_active)
             self.logger.info(f"[Voice] 语音识别状态切换为: {self.is_voice_active}")
             
             # 如果关闭语音，停止当前播放
@@ -133,14 +135,17 @@ class APIRouterHandler:
                 if self.voice_service_task and not self.voice_service_task.done():
                     self.voice_service_task.cancel()
                 # 等待任务清理完成
+                # 修复【1】await 语法错误
                 try:
                     if self.voice_task:
-                        await self.voice_task
+                        await asyncio.wait_for(self.voice_task, timeout=1.0)
                     if self.voice_service_task:
-                        await self.voice_service_task
+                        await asyncio.wait_for(self.voice_service_task, timeout=1.0)
+                except asyncio.TimeoutError:
+                    self.logger.info("[Voice] 任务取消超时，强制结束")
                 except asyncio.CancelledError:
                     self.logger.info("[Voice] 所有语音任务已清理")
-                
+
             return JSONResponse(content={"status": "success"})
         
         @self.app.post("/query")
@@ -163,12 +168,21 @@ class APIRouterHandler:
             self.logger.info("[Query] Received query request")
             data = await request.json()
             user_input = data.get('prompt').strip()
-            if not isinstance(user_input, (str, bytes)):
-                self.logger.error(f"[System] Unexpected data type for user_input: {type(user_input)}")
-                return JSONResponse(content={"error": "Invalid user_input data type"}, status_code=400)
-            else:
-                # Add the user message to the conversation history
-                self.all_messages.append({"role": "user", "content": user_input})
+            # 检查输入类型是否为字符串
+            if not isinstance(user_input, str):
+                # 如果是bytes类型则解码为字符串
+                if isinstance(user_input, bytes):
+                    try:
+                        user_input = user_input.decode('utf-8')
+                    except UnicodeDecodeError:
+                        self.logger.error(f"[System] Failed to decode bytes input: {user_input}")
+                        return JSONResponse(content={"error": "Invalid input encoding"}, status_code=400)
+                else:
+                    self.logger.error(f"[System] Unexpected data type for user_input: {type(user_input)}")
+                    return JSONResponse(content={"error": "Invalid user_input data type"}, status_code=400)
+            
+            # 添加用户消息到对话历史
+            self.all_messages.append({"role": "user", "content": user_input})
             
             self.logger.info(f"[User Message]: {user_input}")
            
@@ -248,7 +262,11 @@ class APIRouterHandler:
                     self.logger.info("[Remote SSH]: " + ' '.join(command))
             
                     # Execute the command on SSH
-                    stdin, stdout, stderr = ssh.exec_command(' '.join(command))
+                    # 确保ssh连接存在并可用
+                    if ssh and ssh.get_transport() and ssh.get_transport().is_active():
+                        stdin, stdout, stderr = ssh.exec_command(' '.join(command))
+                    else:
+                        raise Exception("SSH连接未建立或已断开")
                 
                     # Get the execution result
                     response = stdout.read().decode()
@@ -312,9 +330,10 @@ class APIRouterHandler:
                         ai_response = "[System] 未能获取有效响应"
                     self.all_messages.append({"role": "system", "content": ai_response})
                     
-                    if self.is_voice_active:
-                        create_task(self.audio_util.say_response(ai_response)) 
-                        
+                    # 删除这一行，因为语音播放已经在 chat_handler.process_response 中处理
+                    # if self.is_voice_active:
+                    #     create_task(self.audio_util.say_response(ai_response))
+
                 except Exception as parse_error:
                     self.logger.error(f"[System] 响应解析失败: {parse_error}")
                     self.all_messages.append({"role": "system", "content": "[System] 响应解析错误"})
