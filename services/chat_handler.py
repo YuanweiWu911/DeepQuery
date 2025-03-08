@@ -13,6 +13,7 @@ class ChatHandler:
     def __init__(self, logger):
         self.logger = logger
         self.audio_util = AudioUtil()
+        self.is_voice_active = False
 
     def web_search(self, prompt: str) -> str:
         """Performs web search using Google Serper API.
@@ -88,23 +89,24 @@ class ChatHandler:
                         
             # 清理Markdown格式符号（增强版）
             markdown_patterns = [
-                (r'(#{1,6}\s*)|(\*{1,3}|_{1,3})', ''),  # 标题和强调符号
-                (r'`{1,3}(.*?)`{1,3}', r'\1'),          # 代码块和内联代码
-                (r'!?\[.*?\]\(.*?\)', ''),              # 图片和链接
-                (r'-{3,}|={3,}', ''),                   # 分割线
-                (r'>{1,}', ''),                         # 引用
-                (r'\|\|.*?\|\|', ''),                   # 删除线
-                (r'\s+', ' '),                          # 多个空格合并
-                (r'^\s+|\s+$', '')                      # 首尾空格
-                ]
+                (r'#{1,6}\s*(.*)', r'\1'),        # 标题
+                (r'\*\*([^*]+)\*\*', r'\1'),      # 加粗
+                (r'\*([^*]+)\*', r'\1'),          # 斜体
+                (r'`([^`]+)`', r'\1'),            # 内联代码
+                (r'!\[.*?\]\(.*?\)', ''),         # 图片
+                (r'\[.*?\]\(.*?\)', ''),          # 链接
+                (r'-{3,}|={3,}', ''),             # 分割线
+                (r'^\s*>\s*(.*)$', r'\1'),        # 引用
+                (r'\|\|.*?\|\|', ''),             # 删除线
+                (r'\s+', ' '),                    # 多个空格合并为一个
+            ]
             
             for pattern, replacement in markdown_patterns:
                 ai_response = re.sub(pattern, replacement, ai_response, flags=re.MULTILINE)
             self.logger.info(f"ai_response: {ai_response}")
             if ai_response and self.is_voice_active:
                 # 调用语音合成播放
-#               await self.audio_util.say_response(ai_response)
-                asyncio.creat_task(self.audio_util.say_response(ai_response))
+                asyncio.create_task(self.audio_util.say_response(ai_response))
             return ai_response
         except Exception as e:
             self.logger.error(f"响应处理失败: {str(e)}")
