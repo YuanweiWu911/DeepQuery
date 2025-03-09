@@ -35,6 +35,8 @@
         <button id="load-chat-button" onclick="loadChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Load Chat</button>
         <!-- New Chat button -->
         <button id="new-chat-button" onclick="newChat()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">New Chat</button>
+        <!-- 夜间模式切换按钮 -->
+        <button id="theme-toggle" onclick="toggleTheme()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">🌙</button>
         <!-- local/remote toggle button -->
         <button id="local-remote-toggle" class="off" onclick="toggleLocalRemote()">Local</button>
         <label for="model-select" class="model-select-label"></label>
@@ -96,76 +98,42 @@
         let context = "";
 	    let textarea;
         let terminalOutput;
+        let isDarkMode = false; // 默认为浅色模式
         const aiResponseDiv = document.getElementById('ai-response');
 
-        async function loadModels() {
-               try {
-                   const response = await fetch('/get-models');
-                   if (!response.ok) {
-                       throw new Error('获取模型列表失败');
-                   }
-                   
-                   const data = await response.json();
-                   const modelSelect = document.getElementById('model-select');
-                   
-                   // 清空现有选项（保留默认选项以防加载失败）
-                   if (data.models && data.models.length > 0) {
-                       modelSelect.innerHTML = '';
-                       
-                       // 添加新选项
-                       data.models.forEach(model => {
-                           const option = document.createElement('option');
-                           option.value = model.value;
-                           option.textContent = model.name;
-                           if (model.selected) {
-                               option.selected = true;
-                           }
-                           modelSelect.appendChild(option);
-                       });
-                       
-                       console.log('模型列表加载成功');
-                   }
-               } catch (error) {
-                   console.error('加载模型列表出错:', error);
-                   // 加载失败时保留默认模型选项
-               }
-           }
-      	// 替换可能存在的 DOMSubtreeModified 监听
-        function setupMutationObservers() {
-            // 监控聊天窗口更新
-            const chatObserver = new MutationObserver((mutations) => {
-              mutations.forEach((mutation) => {
-                if (mutation.addedNodes.length) {
-                  // 自动滚动到底部
-                  const terminalOutput = document.getElementById('terminal-output');
-                  terminalOutput.scrollTop = terminalOutput.scrollHeight;
-                }
-              });
-            });
-          
-            chatObserver.observe(document.getElementById('ai-response'), {
-              childList: true,
-              subtree: true
-            });
-          
-          
-            // 监控终端输出更新
-            const terminalObserver = new MutationObserver((mutations) => {
-                mutations.forEach((mutation) => {
-                    if (mutation.addedNodes.length && isTerminalVisible) {
-                        terminalOutput.scrollTop = terminalOutput.scrollHeight;
-                    }
-                });
-            });
-            terminalObserver.observe(document.getElementById('terminal-output'), {
-                childList: true,
-                subtree: true
-            });
+        // 主题切换函数
+        function toggleTheme() {
+            isDarkMode = !isDarkMode;
+            const themeToggleBtn = document.getElementById('theme-toggle');
+            
+            if (isDarkMode) {
+                document.body.classList.add('dark-mode');
+                themeToggleBtn.textContent = '☀️'; // 太阳图标表示切换到浅色模式
+                localStorage.setItem('theme', 'dark');
+            } else {
+                document.body.classList.remove('dark-mode');
+                themeToggleBtn.textContent = '🌙'; // 月亮图标表示切换到深色模式
+                localStorage.setItem('theme', 'light');
+            }
         }
 
-        // 修改DOMContentLoaded监听器
+        // 检查并应用保存的主题设置
+        function applyTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {
+                isDarkMode = true;
+                document.body.classList.add('dark-mode');
+                document.getElementById('theme-toggle').textContent = '☀️';
+            } else {
+                isDarkMode = false;
+                document.body.classList.remove('dark-mode');
+                document.getElementById('theme-toggle').textContent = '🌙';
+            }
+        }
+
+        // 在页面加载时应用主题
         document.addEventListener('DOMContentLoaded', () => {
-	    setupMutationObservers();
+            applyTheme();
             const sendButton = document.getElementById('send-button');
             const saveButton = document.getElementById('save-button'); 
             searchToggle = document.getElementById('search-toggle');
