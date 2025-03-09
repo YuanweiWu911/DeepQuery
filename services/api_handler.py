@@ -95,6 +95,7 @@ class APIRouterHandler:
                 self.logger.error(f"[Voice] 处理语音输入出错: {e}")
                 await asyncio.sleep(1)
                 
+    # 在setup_routes方法中添加新路由
     def setup_routes(self):
         """Configures all API endpoints."""
         @self.app.get("/favicon.ico")
@@ -359,6 +360,12 @@ class APIRouterHandler:
             return JSONResponse(content={"status": "success", "message": "chat init."},
                                 status_code=200
             )
+
+        @self.app.get("/get-models")
+        async def get_models():
+            """获取模型列表"""
+            from config import MODELS
+            return {"models": MODELS}
 
         @self.app.post("/load-chat")
         async def load_chat(request: Request):

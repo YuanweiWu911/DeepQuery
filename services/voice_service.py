@@ -15,7 +15,7 @@ class VoiceRecognitionService:
         self.has_started = False
         self.unrecognized_count = 0
         self.max_retries = 3  # 最大重试次数
-        self.wake_words = ["小弟", "小迪", "小D"]
+        self.wake_words = ["小弟", "小迪", "小D","老弟"]
         self.ws_handler = ws_handler
         self.audio_util = AudioUtil()
     
