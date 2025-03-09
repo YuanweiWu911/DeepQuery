@@ -8,6 +8,8 @@ SSH_CONFIG = {
     'PASSWORD': os.getenv('SSH_PASSWORD', 'wjswyw119')
 }
 
+WEB_SEARCH_CONFIG = {'SERPER_API_KEY': os.getenv('SERPER_API_KEY', 'ebba2f3fd617ab2108b7b66cf41cf5b3a717815a')}
+
 WEBSOCKET_PORT = 8765
 HTTP_PORT = 8000
 

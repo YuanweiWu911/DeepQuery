@@ -30,20 +30,20 @@ input, button {
     flex: 1; /* 让该元素自动填充剩余空间 */
 }
 
-.user-question {
-    background-color: lightgreen;
-    color: black;
+.ai-response-normal {
+    background-color: #55DDE0;
+    color: #343434;
     font-weight: bold;
 }
 
 .ai-thinking {
-    background-color: white;
-    color: gray;
+    background-color: #F7FFF7;
+    color: #343434;
 }
 
-.ai-response-normal {
-    background-color: lightcyan;
-    color: black;
+.user-question {
+    background-color: #FBDC92;
+    color: #343434;
 }
 
 .user-question p,
@@ -332,4 +332,37 @@ select {
 #voice-toggle.on {
     background-color: lightgreen;
     box-shadow: 0 0 8px lightgreen;
+}
+
+/* 在现有样式末尾添加 */
+@media (prefers-color-scheme: dark) {
+    body {
+        background-color: #1a1a1a;
+        color: #e0e0e0;
+    }
+
+    .ai-response-normal {
+        background-color: #2d2d2d;
+        color: #20c997;
+    }
+
+    .user-question {
+        background-color: #343a40;
+        color: #e0e0e0;
+    }
+
+    input, button, select {
+        background-color: #2d2d2d;
+        border-color: #495057;
+        color: #e0e0e0;
+    }
+
+    #terminal-output {
+        background-color: #121212;
+        border-color: #343a40;
+    }
+
+    .on {
+        background-color: #20c997 !important;
+    }
 }

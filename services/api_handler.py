@@ -47,18 +47,25 @@ class APIRouterHandler:
         self.voice_lock = Lock()
         self.voice_service = VoiceRecognitionService(logger, ws_handler = ws_handler)
         self.voice_service_task = None
-        self._load_config()
+
+        # 从config.py导入配置，替代原来的_load_config函数
+        from config import SSH_CONFIG
+        self.SSH_HOST = SSH_CONFIG.get('HOST')
+        self.SSH_PORT = SSH_CONFIG.get('PORT', 22)
+        self.SSH_USER = SSH_CONFIG.get('USER')
+        self.SSH_PASSWORD = SSH_CONFIG.get('PASSWORD')
+    
         self.audio_util = AudioUtil()
         self.logger.info("[System] Initializing APIRouterHandler")
 
-    def _load_config(self):
-        """Loads SSH configuration from .deepquery.config file."""
-        with open('.deepquery.config', 'r') as f:
-            self.config = json.load(f)
-        self.SSH_HOST = self.config.get('SSH_HOST')
-        self.SSH_PORT = self.config.get('SSH_PORT', 22)
-        self.SSH_USER = self.config.get('SSH_USER')
-        self.SSH_PASSWORD = self.config.get('SSH_PASSWORD')
+#   def _load_config(self):
+#       """Loads SSH configuration from .deepquery.config file."""
+#       with open('.deepquery.config', 'r') as f:
+#           self.config = json.load(f)
+#       self.SSH_HOST = self.config.get('SSH_HOST')
+#       self.SSH_PORT = self.config.get('SSH_PORT', 22)
+#       self.SSH_USER = self.config.get('SSH_USER')
+#       self.SSH_PASSWORD = self.config.get('SSH_PASSWORD')
 
     async def start_voice_recognition(self):
         """启动语音识别任务"""

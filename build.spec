@@ -2,19 +2,24 @@
 block_cipher = None
 
 a = Analysis(
-    ['DeepQuery_exe.py'],
+    ['__main__.py'],
     pathex=[],
     binaries=[],
     datas=[
         ('static/*', 'static'),
-        ('templates/*', 'templates')
+        ('templates/*', 'templates'),
+        ('services/*.py', 'services'),
     ],
     hiddenimports=[
+        'services.api_handler',
+        'services.audio_util',
+        'services.voice_service',
+        'paramiko.transport',
         'pynvml',
         'paramiko.ed25519key',
         'uvicorn.loops.auto',
-        'uvicorn.protocols.http.auto'
-	'asyncio',
+        'uvicorn.protocols.http.auto',
+     	'asyncio'
     ],
     hookspath=[],
     hooksconfig={},
