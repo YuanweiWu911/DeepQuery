@@ -7,7 +7,13 @@ This is a web application that provides an interface for querying the LLM (Large
 ## Features
 
 - **Local/Remote**: Local will use local LLM model, Remote to use remote server's LLM model.
-- **Model Selection**: Users can select different LLM models (`deepseek-r1:7b`, `deepseek-r1:32b`, `deepseek-r1:70b`) to use for querying.
+- **Dynamic Model Selection**: Users can select different LLM models configured in `config.py` to use for querying. Currently supported models include:
+  - deepseek-r1:1.5b
+  - deepseek-r1:7b
+  - deepseek-r1:32b
+  - deepseek-r1:70b
+  - deepseek-r1:671b
+  - qwq
 - **Web Search**: There is a search toggle button that can be used to enable or disable the web search function. When enabled, relevant web search results will be included in the prompt sent to the LLM.
 - **Reasoning**: There is a reasoning toggle button that can be used to enable or disable the reasoning feature. This could potentially be used to get more detailed and logical explanations from the LLM.
 - **Text Speech**: Users can enable or disable the speech function, which may be used to convert text to speech or vice versa depending on the implementation.
@@ -16,26 +22,19 @@ This is a web application that provides an interface for querying the LLM (Large
 - **Save Chat**: Users can save the chat content in two formats:
   - **JSON**: The chat messages are saved in a JSON file, which can be used to store the conversation history in a structured format.
   - **Markdown**: The AI response content can be saved as a Markdown file, which is useful for sharing or further processing.
+- **File Reading**: Users can upload and read files to include their content in the conversation.
+- **GPU Monitoring**: Monitor GPU utilization when using local models.
+- **Terminal Interface**: View system logs and operation details.
 
 ## Prerequisites
 
 - Python 3.10: The application is built using Python 3 and the fastapi framework.
-- fastapi
-- paramiko
-- requests
-- pyinstaller
-- uvicorn
-- websockets
-You also need to set the following environment variables:
-
-- `SERPER_API_KEY`: API key for the `google.serper` API, which is used for web search.
-- `PROXY_URL` (optional): If you need to use a proxy for web search, set this environment variable.
 
 ## Installation
 
 1. Clone the repository:
    ```bash
-   git clone  https://github.com/YuanweiWu911/DeepQuery.git
+   git clone https://github.com/YuanweiWu911/DeepQuery.git
    cd DeepQuery 
    ```
 2. Install the required Python packages:

@@ -6,6 +6,9 @@ uvicorn==0.34.0
 websockets==15.0
 pystray>=0.19.2
 Pillow>=9.0.0
-jinja2
+jinja2>=3.1.2
 pygame==2.6.1
 SpeechRecognition==3.14.1
+python-multipart>=0.0.6
+pynvml>=11.5.0
+aiofiles>=23.2.1
