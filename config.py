@@ -22,4 +22,4 @@ MODELS = [
     {"value": "deepseek-r1:671b", "name": "deepseek-r1:671b", "selected": False}
 ]
 
-WEB_SEARCH_CONFIG = {'SERPER_API_KEY': os.getenv('SERPER_API_KEY', 'ebba2f3fd617ab2108b7b66cf41cf5b3a717815a')}
+WEB_SEARCH_CONFIG = {'SERPER_API_KEY': os.getenv('SERPER_API_KEY', 'your serper api key')}
