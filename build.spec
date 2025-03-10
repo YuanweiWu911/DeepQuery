@@ -9,6 +9,8 @@ a = Analysis(
         ('static/*', 'static'),
         ('templates/*', 'templates'),
         ('services/*.py', 'services'),
+        ('app.py', '.'),
+        ('config.py', '.'),
     ],
     hiddenimports=[
         'services.api_handler',
