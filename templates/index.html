@@ -101,6 +101,77 @@
         let isDarkMode = false; // 默认为浅色模式
         const aiResponseDiv = document.getElementById('ai-response');
 
+
+        // Add helper functions for terminal output
+        function createInfoLine(text) {
+            const line = document.createElement('p');
+            line.style.color = '#00ff00'; // Green color for info
+            line.textContent = text;
+            return line;
+        }
+    
+        function createErrorLine(text) {
+            const line = document.createElement('p');
+            line.style.color = '#ff0000'; // Red color for errors
+            line.textContent = text;
+            return line;
+        }
+    
+        // Define loadModels function before it's called
+        async function loadModels() {
+            try {
+                console.log('开始请求模型列表...');
+                const response = await fetch('/get-models');
+                console.log('模型列表请求状态:', response.status);
+                
+                if (!response.ok) {
+                    throw new Error(`获取模型列表失败: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                console.log('获取到的模型数据:', data);
+                
+                const modelSelect = document.getElementById('model-select');
+                if (!modelSelect) {
+                    console.error('找不到model-select元素');
+                    return;
+                }
+                
+                // 清空现有选项
+                if (data.models && data.models.length > 0) {
+                    console.log(`找到${data.models.length}个模型选项`);
+                    modelSelect.innerHTML = '';
+                    
+                    // 添加新选项
+                    data.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model.value;
+                        option.textContent = model.name;
+                        if (model.selected) {
+                            option.selected = true;
+                            console.log(`设置默认选中模型: ${model.name}`);
+                        }
+                        modelSelect.appendChild(option);
+                    });
+                    
+                    console.log('模型列表加载成功');
+                } else {
+                    console.warn('模型列表为空或格式不正确');
+                }
+            } catch (error) {
+                console.error('加载模型列表出错:', error);
+                // 加载失败时添加一个提示选项
+                const modelSelect = document.getElementById('model-select');
+                if (modelSelect) {
+                    const option = document.createElement('option');
+                    option.value = "error";
+                    option.textContent = "加载失败 - 请刷新页面";
+                    modelSelect.innerHTML = '';
+                    modelSelect.appendChild(option);
+                }
+            }
+        }
+    
         // 主题切换函数
         function toggleTheme() {
             isDarkMode = !isDarkMode;
