@@ -148,3 +148,32 @@ async def main():
     # 清理托盘图标
     if tray_icon:
         tray_icon.stop()
+
+# 在现有路由之后添加以下路由
+
+@app.get('/get-config')
+async def get_config():
+    """获取当前配置"""
+    from config import config
+    return config
+
+@app.post('/save-config')
+async def save_config(request: Request):
+    """保存配置"""
+    try:
+        new_config = await request.json()
+        from config import config, save_config
+        
+        # 更新配置
+        config["SSH_CONFIG"] = new_config["SSH_CONFIG"]
+        config["WEBSOCKET_PORT"] = new_config["WEBSOCKET_PORT"]
+        config["HTTP_PORT"] = new_config["HTTP_PORT"]
+        config["WEB_SEARCH_CONFIG"] = new_config["WEB_SEARCH_CONFIG"]
+        
+        # 保存配置
+        if save_config():
+            return {"success": True}
+        else:
+            return {"success": False, "message": "保存配置文件失败"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}

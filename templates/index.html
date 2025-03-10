@@ -71,10 +71,61 @@
     </div>
 
     <!-- Terminal button and output window -->
+    <!-- 在Terminal按钮旁边添加Config按钮 -->
     <button id="terminal-button" onclick="toggleTerminal()">Terminal</button>
+    <!-- Config按钮 -->
+    <button id="config-button" onclick="openConfigDialog()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">Config</button>
     <!-- GPUbutton -->
     <button id="gpu-button" onclick="getGPUInfo()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">GPU</button>
     <div id="terminal-output" class="terminal-output"></div>
+    
+    <!-- 配置对话框 -->
+    <div id="config-dialog" class="config-dialog hidden">
+        <div class="config-dialog-content">
+            <h3>系统配置</h3>
+            <div class="config-section">
+                <h4>SSH配置</h4>
+                <div class="config-item">
+                    <label for="ssh-host">主机地址:</label>
+                    <input type="text" id="ssh-host" name="ssh-host">
+                </div>
+                <div class="config-item">
+                    <label for="ssh-port">端口:</label>
+                    <input type="number" id="ssh-port" name="ssh-port">
+                </div>
+                <div class="config-item">
+                    <label for="ssh-user">用户名:</label>
+                    <input type="text" id="ssh-user" name="ssh-user">
+                </div>
+                <div class="config-item">
+                    <label for="ssh-password">密码:</label>
+                    <input type="password" id="ssh-password" name="ssh-password">
+                </div>
+            </div>
+            <div class="config-section">
+                <h4>端口配置</h4>
+                <div class="config-item">
+                    <label for="websocket-port">WebSocket端口:</label>
+                    <input type="number" id="websocket-port" name="websocket-port">
+                </div>
+                <div class="config-item">
+                    <label for="http-port">HTTP端口:</label>
+                    <input type="number" id="http-port" name="http-port">
+                </div>
+            </div>
+            <div class="config-section">
+                <h4>Web搜索配置</h4>
+                <div class="config-item">
+                    <label for="serper-api-key">Serper API密钥:</label>
+                    <input type="password" id="serper-api-key" name="serper-api-key">
+                </div>
+            </div>
+            <div class="config-buttons">
+                <button onclick="saveConfig()">保存</button>
+                <button onclick="closeConfigDialog()">取消</button>
+            </div>
+        </div>
+    </div>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" onerror="alert('Failed to load marked.min.js')"></script>
     <script>
         /**
@@ -661,7 +712,102 @@
             };
             input.click();
         }        
+
+// 在现有JavaScript代码中添加以下函数
+
+// 打开配置对话框
+async function openConfigDialog() {
+    try {
+        // 获取当前配置
+        const response = await fetch('/get-config');
+        if (!response.ok) {
+            throw new Error(`获取配置失败: ${response.status}`);
+        }
+        
+        const config = await response.json();
+        console.log('获取到的配置:', config);
+        
+        // 填充表单
+        document.getElementById('ssh-host').value = config.SSH_CONFIG.HOST;
+        document.getElementById('ssh-port').value = config.SSH_CONFIG.PORT;
+        document.getElementById('ssh-user').value = config.SSH_CONFIG.USER;
+        document.getElementById('ssh-password').value = config.SSH_CONFIG.PASSWORD;
+        
+        document.getElementById('websocket-port').value = config.WEBSOCKET_PORT;
+        document.getElementById('http-port').value = config.HTTP_PORT;
+        
+        document.getElementById('serper-api-key').value = config.WEB_SEARCH_CONFIG.SERPER_API_KEY;
+        
+        // 显示对话框
+        document.getElementById('config-dialog').classList.remove('hidden');
+    } catch (error) {
+        console.error('加载配置出错:', error);
+        alert('加载配置失败，请检查控制台获取详细信息。');
+    }
+}
+
+// 关闭配置对话框
+function closeConfigDialog() {
+    document.getElementById('config-dialog').classList.add('hidden');
+}
+
+// 保存配置
+async function saveConfig() {
+    try {
+        const config = {
+            SSH_CONFIG: {
+                HOST: document.getElementById('ssh-host').value,
+                PORT: parseInt(document.getElementById('ssh-port').value),
+                USER: document.getElementById('ssh-user').value,
+                PASSWORD: document.getElementById('ssh-password').value
+            },
+            WEBSOCKET_PORT: parseInt(document.getElementById('websocket-port').value),
+            HTTP_PORT: parseInt(document.getElementById('http-port').value),
+            WEB_SEARCH_CONFIG: {
+                SERPER_API_KEY: document.getElementById('serper-api-key').value
+            }
+        };
+        
+        const response = await fetch('/save-config', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(config)
+        });
+        
+        if (!response.ok) {
+            throw new Error(`保存配置失败: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        if (result.success) {
+            alert('配置保存成功！部分设置可能需要重启应用后生效。');
+            closeConfigDialog();
+        } else {
+            throw new Error(result.message || '保存配置失败');
+        }
+    } catch (error) {
+        console.error('保存配置出错:', error);
+        alert(`保存配置失败: ${error.message}`);
+    }
+}
+
+// 在DOMContentLoaded事件中添加对话框关闭事件
+document.addEventListener('DOMContentLoaded', () => {
+    // 现有代码...
+    
+    // 点击对话框外部关闭对话框
+    const configDialog = document.getElementById('config-dialog');
+    configDialog.addEventListener('click', (event) => {
+        if (event.target === configDialog) {
+            closeConfigDialog();
+        }
+    });
+});
+
     </script>
 </body>
 
 </html>
+

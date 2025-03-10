@@ -548,3 +548,92 @@ body.dark-mode #voice-toggle.off {
     border-color: #495057;
     color: #e0e0e0;
 }
+
+/* 配置对话框样式 */
+.config-dialog {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.config-dialog.hidden {
+    display: none;
+}
+
+.config-dialog-content {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 5px;
+    width: 80%;
+    max-width: 600px;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.dark-mode .config-dialog-content {
+    background-color: #333;
+    color: #fff;
+}
+
+.config-section {
+    margin-bottom: 20px;
+}
+
+.config-item {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+}
+
+.config-item label {
+    width: 150px;
+    display: inline-block;
+}
+
+.config-item input {
+    flex: 1;
+    padding: 5px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+}
+
+.dark-mode .config-item input {
+    background-color: #444;
+    color: #fff;
+    border-color: #666;
+}
+
+.config-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.config-buttons button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 3px;
+    background-color: #4CAF50;
+    color: white;
+    cursor: pointer;
+}
+
+.config-buttons button:last-child {
+    background-color: #f44336;
+}
+
+.dark-mode .config-buttons button {
+    background-color: #2e7d32;
+}
+
+.dark-mode .config-buttons button:last-child {
+    background-color: #c62828;
+}
