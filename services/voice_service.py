@@ -16,6 +16,8 @@ class VoiceRecognitionService:
         self.unrecognized_count = 0
         self.max_retries = 3  # 最大重试次数
         self.wake_words = ["小弟", "小迪", "小D","老弟"]
+        # 添加结束语列表
+        self.end_phrases = ["就这样", "结束", "完毕", "谢谢", "好了", "退出", "结束对话", "请回答"]
         self.ws_handler = ws_handler
         self.audio_util = AudioUtil()
     
@@ -47,6 +49,19 @@ class VoiceRecognitionService:
         while text.startswith(wake_word):
             text = text[len(wake_word):].lstrip()
         return text
+    
+    # 添加结束语检测方法
+    def detect_end_phrase(self, text):
+        """
+        检测文本中是否包含结束语。
+        
+        :param text: 需要检测的文本
+        :return: 如果包含结束语返回True，否则返回False
+        """
+        for phrase in self.end_phrases:
+            if phrase in text:
+                return True
+        return False
 
     async def start_listening(self):
         """核心语音监听循环，包含唤醒词检测和语音识别逻辑"""
@@ -113,6 +128,20 @@ class VoiceRecognitionService:
                                 # 如果没有检测到唤醒词，直接追加文本
                                 self.full_query = (self.full_query + " " + text).strip()
                                 self.logger.info(f"[Voice] 追加查询内容: {self.full_query}")
+                            
+                            # 检测结束语
+                            if self.has_started and self.full_query and self.detect_end_phrase(text):
+                                self.logger.info(f"[Voice] 检测到结束语，提交查询: {self.full_query}")
+                                # 从full_query中移除结束语
+                                for end_phrase in self.end_phrases:
+                                    if end_phrase in self.full_query:
+                                        self.full_query = self.full_query.replace(end_phrase, "").strip()
+                                
+                                await self.audio_util.say_response("收到, 让我想想")
+                                await self.audio_queue.put(self.full_query)
+                                self.reset_state()
+                                return self.full_query
+                            
                             self.unrecognized_count = 0
                             continue
 
@@ -126,7 +155,7 @@ class VoiceRecognitionService:
                                     self.logger.info(f"[Voice] 连续2次未识别，提交查询: {self.full_query}")
                                     await self.audio_queue.put(self.full_query)
                                     self.reset_state()
-                                    continue
+                                    return self.full_query
 
                                 if not self.is_listening:
                                     break 
@@ -135,7 +164,7 @@ class VoiceRecognitionService:
                             if self.has_started and self.full_query and self.unrecognized_count >= 2:
                                 await self.audio_queue.put(self.full_query)
                                 self.reset_state()
-                                continue
+                                return self.full_query
                             if not self.is_listening:
                                 break
                             
@@ -146,14 +175,16 @@ class VoiceRecognitionService:
                             await asyncio.sleep(delay)
                             retry_count += 1
                             # 检查网络连接
-                            # 添加网络连接检查方法
                             try:
+                                # Test connection but don't return boolean values
                                 socket.create_connection(("8.8.8.8", 53), timeout=3)
-                                return True
+                                # Continue the loop instead of returning True
+                                continue
                             except OSError:
                                 await self.audio_util.say_response("网络连接失败")
                                 self.stop()
-                                return False
+                                # Return empty string instead of False to maintain consistent return type
+                                return ""
                             if not self.is_listening:
                                 break
                             continue
@@ -180,9 +211,18 @@ class VoiceRecognitionService:
                     break
                 
             finally:
-                    if mic:
-                        mic.__exit__(None, None, None)
-                        mic = None
+                # 修复：添加对mic是否为None的检查，并使用更安全的方式关闭麦克风
+                if mic is not None:
+                    try:
+                        # 检查是否有__exit__方法
+                        if hasattr(mic, '__exit__'):
+                            mic.__exit__(None, None, None)
+                        # 检查是否有close方法
+                        elif hasattr(mic, 'close'):
+                            mic.close()
+                    except Exception as e:
+                        self.logger.error(f"[Voice] 关闭麦克风时出错: {str(e)}")
+                mic = None
             
             if not self.is_listening:
                 self.logger.info("[Voice] 退出语音服务")

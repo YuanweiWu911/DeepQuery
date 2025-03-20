@@ -302,10 +302,12 @@
                 }
             });
             // 添加 MutationObserver 清理逻辑
-            window.addEventListener('unload', () => {
+            // 替换 unload 事件为 pagehide 事件
+            window.addEventListener('pagehide', () => {
                 if (chatObserver) chatObserver.disconnect();
                 if (terminalObserver) terminalObserver.disconnect();
             });
+            
             loadModels();
         });
 
@@ -484,24 +486,54 @@
         // New function to toggle the local/remote button state
         async function toggleLocalRemote() {
             const toggleButton = document.getElementById('local-remote-toggle');
-            isRemote = !isRemote; // 切换isRemote的值
+            const originalState = isRemote;
+            
+            // Update UI immediately
+            isRemote = !isRemote;
             toggleButton.classList.toggle('off');
             toggleButton.textContent = isRemote ? 'Remote' : 'Local';
            
-            // 发送请求到后端
-            const response = await fetch('/toggle-local-remote', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ "isRemote": isRemote })
-            });
-           
-            const data = await response.json();
-            if (data.status === 'success') {
-                console.log('Local/Remote mode toggled successfully');
-            } else {
-                console.error('Failed to toggle local/remote mode');
+            try {
+                // Add timeout handling
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+                
+                // Send request to backend
+                const response = await fetch('/toggle-local-remote', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ "isRemote": isRemote }),
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeoutId); // Clear timeout if request completes
+                
+                if (!response.ok) {
+                    throw new Error(`Server responded with status: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                if (data.status === 'success') {
+                    console.log('Local/Remote mode toggled successfully');
+                } else {
+                    throw new Error(data.message || 'Failed to toggle local/remote mode');
+                }
+            } catch (error) {
+                console.error('Error toggling local/remote mode:', error);
+                
+                // Revert UI state on error
+                isRemote = originalState;
+                toggleButton.classList.toggle('off');
+                toggleButton.textContent = isRemote ? 'Remote' : 'Local';
+                
+                // Show error message
+                if (error.name === 'AbortError') {
+                    alert('Request timed out. The server might be busy or unreachable.');
+                } else {
+                    alert(`Failed to toggle mode: ${error.message}`);
+                }
             }
         }
 

@@ -17,8 +17,6 @@ from services.api_handler import APIRouterHandler
 from services.chat_handler import ChatHandler
 from services.log_handler import WebSocketLogHandler, StdoutLogger
 from utils.tray_icon import run_tray_icon
-from config import *
-
 
 tray_icon = None
 server_task = None
@@ -121,9 +119,18 @@ async def main():
             # ws_task is always created, so we can directly cancel it
             # Check if ws_task exists and is not done before cancelling
             # 检查ws_task是否存在且已定义
-            if 'ws_task' in locals() and ws_task and not ws_task.done():
-                ws_task.cancel()
-                tasks_to_cancel.append(ws_task)
+            if 'ws_task' in locals():
+                try:
+                    if ws_task and not ws_task.done() and not ws_task.cancelled():
+                        ws_task.cancel()
+                        tasks_to_cancel.append(ws_task)
+                except Exception as e:
+                    logger.error(f"[System] Error checking ws_task status: {e}")
+                    # 尝试取消任务，即使状态检查失败
+                    try:
+                        ws_task.cancel()
+                    except Exception:
+                        pass
             
             # Clean up tasks with error handling
             if tasks_to_cancel:

@@ -360,14 +360,20 @@ body.dark-mode {
     color: #e0e0e0;
 }
 
-body.dark-mode .ai-response-normal {
+body.dark-mode .user-question {
     background-color: #2d2d2d;
-    color: #20c997;
+    color: #55DDE0;
 }
 
-body.dark-mode .user-question {
-    background-color: #343a40;
-    color: #e0e0e0;
+body.dark-mode .ai-response-normal {
+    background-color: #2d2d2d;
+    color: white;
+}
+
+/* 添加深色模式下的ai-thinking样式 */
+body.dark-mode .ai-thinking {
+    background-color: #2d2d2d;
+    color: #aaaaaa;
 }
 
 body.dark-mode input, 
