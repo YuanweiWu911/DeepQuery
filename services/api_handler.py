@@ -82,21 +82,27 @@ class APIRouterHandler:
                 self.logger.info("[Voice] 旧语音任务已取消")
 
         while self.is_voice_active:
-            self.voice_service_task = create_task(self.voice_service.start_listening()) 
             try:
-                prompt = await self.voice_service.audio_queue.get()
+                self.voice_service_task = create_task(self.voice_service.start_listening())
+                prompt = await self.voice_service_task
+                if not prompt:
+                    for client in list(self.ws_handler.connected_clients):
+                        try:
+                            await self.ws_handler.safe_send(client, "VoiceStatus: off")
+                        except Exception:
+                            pass
+                    break
+
                 self.logger.info(f"[Voice] 处理语音输入: {prompt}")
                 self.all_messages.append({"role": "user", "content": prompt})
-                # 推送给前端
-                for client in self.ws_handler.connected_clients:
-                   try:
-                       await client.send(f"VoicePrompt: {prompt}")
-                   except Exception as e:
-                       self.logger.error(f"[WebSocket] 发送失败: {e}")
+                for client in list(self.ws_handler.connected_clients):
+                    try:
+                        await self.ws_handler.safe_send(client, f"VoicePrompt: {prompt}")
+                    except Exception as e:
+                        self.logger.error(f"[WebSocket] 发送失败: {e}")
 
             except asyncio.CancelledError:
                 self.logger.info(f"[Voice] 语音识别任务被取消")
-                self.is_voice_active = False
                 break
             except Exception as e:
                 self.logger.error(f"[Voice] 处理语音输入出错: {e}")
@@ -116,45 +122,54 @@ class APIRouterHandler:
 
         @self.app.post("/toggle-voice")
         async def toggle_voice(request: Request):
-            data = await request.json()
-            self.is_voice_active = data.get("isVoiceActive", False)
-            # 同步 ChatHandler 的语音状态
-            self.chat_handler.set_voice_active(self.is_voice_active)
-            self.logger.info(f"[Voice] 语音识别状态切换为: {self.is_voice_active}")
-            
-            # 如果关闭语音，停止当前播放
-            if not self.is_voice_active and pygame.mixer.get_init() and pygame.mixer.music.get_busy():
-                pygame.mixer.music.stop() 
+            try:
+                data = await request.json()
+            except Exception:
+                return JSONResponse(content={"status": "error", "message": "invalid json"}, status_code=400)
+            desired_state = bool(data.get("isVoiceActive", False))
 
-            if self.is_voice_active:
-                self.logger.info("[Voice] 语音识别已激活")
-                # 取消旧任务,并启动新任务
-                if self.voice_task and not self.voice_task.done():
-                    self.voice_task.cancel()
-                if self.voice_service_task:
-                    self.voice_service_task.cancel()
-                # 启动新任务
-                self.voice_task = create_task(self.start_voice_recognition())
-            else:
-                self.logger.info("[Voice] 语音识别已禁用")
-                self.voice_service.stop()
-                if self.voice_task and not self.voice_task.done():
-                    self.voice_task.cancel()
-                if self.voice_service_task and not self.voice_service_task.done():
-                    self.voice_service_task.cancel()
-                # 等待任务清理完成
-                # 修复【1】await 语法错误
-                try:
-                    if self.voice_task:
-                        await asyncio.wait_for(self.voice_task, timeout=1.0)
-                    if self.voice_service_task:
-                        await asyncio.wait_for(self.voice_service_task, timeout=1.0)
-                except asyncio.TimeoutError:
-                    self.logger.info("[Voice] 任务取消超时，强制结束")
-                except asyncio.CancelledError:
-                    self.logger.info("[Voice] 所有语音任务已清理")
+            async with self.voice_lock:
+                if desired_state == self.is_voice_active:
+                    return JSONResponse(content={"status": "success", "isVoiceActive": self.is_voice_active})
 
-            return JSONResponse(content={"status": "success"})
+                self.is_voice_active = desired_state
+                self.chat_handler.set_voice_active(self.is_voice_active)
+                self.logger.info(f"[Voice] 语音识别状态切换为: {self.is_voice_active}")
+
+                if not self.is_voice_active:
+                    self.logger.info("[Voice] 语音识别已禁用")
+                    if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+                        pygame.mixer.music.stop()
+
+                    self.voice_service.stop()
+
+                    tasks = []
+                    if self.voice_task and not self.voice_task.done():
+                        tasks.append(self.voice_task)
+                    if self.voice_service_task and not self.voice_service_task.done():
+                        tasks.append(self.voice_service_task)
+
+                    if tasks:
+                        try:
+                            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=5.0)
+                        except asyncio.TimeoutError:
+                            for t in tasks:
+                                t.cancel()
+                            await asyncio.gather(*tasks, return_exceptions=True)
+
+                else:
+                    self.logger.info("[Voice] 语音识别已激活")
+                    if self.voice_task and not self.voice_task.done():
+                        self.voice_task.cancel()
+                        await asyncio.gather(self.voice_task, return_exceptions=True)
+                    if self.voice_service_task and not self.voice_service_task.done():
+                        self.voice_service_task.cancel()
+                        await asyncio.gather(self.voice_service_task, return_exceptions=True)
+
+                    self.voice_service.start()
+                    self.voice_task = create_task(self.start_voice_recognition())
+
+                return JSONResponse(content={"status": "success", "isVoiceActive": self.is_voice_active})
         
         @self.app.post("/query")
         async def query(request: Request):
@@ -203,7 +218,7 @@ class APIRouterHandler:
             # If search is on, call the web_search function
             if is_search_on:
                 self.logger.info(f"[Web Search]: {user_input}")
-                web_context = self.chat_handler.web_search(user_input)
+                web_context = await asyncio.to_thread(self.chat_handler.web_search, user_input)
                 self.logger.info(f"[Search result]: {web_context}")
                 if not isinstance(web_context, (str, bytes)):
                     self.logger.error(f"[System] Unexpected data type for web_context: {type(web_context)}")
@@ -213,28 +228,10 @@ class APIRouterHandler:
                 # Notify the front end to start executing the command
                 for client in self.ws_handler.connected_clients:
                     try:
-                        await client.send(datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]+" - __main__ - INFO - "+"[front end] start query")
+                        await self.ws_handler.safe_send(client, datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]+" - __main__ - INFO - "+"[front end] start query")
                         self.logger.info("[System]: send message to client")  # New log record
                     except Exception as e:
                         self.logger.error(f"[System] Failed to send 'start' message: {e}")
-           
-                if self.is_remote:
-                   # Establish an SSH connection
-                   try:
-                       ssh = paramiko.SSHClient()                                                                  
-                       ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                       ssh.connect(
-                              self.SSH_HOST,
-                              port=self.SSH_PORT,
-                              username=self.SSH_USER,
-                              password=self.SSH_PASSWORD)
-                       
-                   except paramiko.AuthenticationException:
-                      self.logger.error("[System] SSH authentication failed.")
-                      return JSONResponse(content={"error": "SSH authentication failed"}, status_code=500)
-                   except paramiko.SSHException as ssh_ex:
-                      self.logger.error(f"[System] SSH connection error: {ssh_ex}")
-                      return JSONResponse(content={"error": f"SSH connection error: {ssh_ex}"}, status_code=500)
            
                 # Build the prompt
                 prompt = f"""[System Instruction] You are an AI assistant. The current date is {datetime.now().strftime('%Y-%m-%d')}.
@@ -259,28 +256,31 @@ class APIRouterHandler:
                     self.logger.error(f"[System] JSON serialization error: {e}")
                     return JSONResponse(content={"error": "Invalid data format"}, status_code=400)
                 if self.is_remote:
-                    command = [
-                        "curl",
-                        "-s",
-                        "-X", "POST",
-                        "http://localhost:11434/api/generate",
-                        "-H", "Content-Type: application/json",
-                        "-d", shlex.quote(data_json)
-                    ]
-                    self.logger.info("[Remote SSH]: " + ' '.join(command))
-            
-                    # Execute the command on SSH
-                    # 确保ssh连接存在并可用
-                    if ssh and ssh.get_transport() and ssh.get_transport().is_active():
+                    def _remote_call():
+                        ssh = paramiko.SSHClient()
+                        ssh.load_system_host_keys()
+                        ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
+                        ssh.connect(
+                            self.SSH_HOST,
+                            port=self.SSH_PORT,
+                            username=self.SSH_USER,
+                            password=self.SSH_PASSWORD,
+                        )
+                        command = [
+                            "curl",
+                            "-s",
+                            "-X", "POST",
+                            "http://localhost:11434/api/generate",
+                            "-H", "Content-Type: application/json",
+                            "-d", shlex.quote(data_json),
+                        ]
                         stdin, stdout, stderr = ssh.exec_command(' '.join(command))
-                    else:
-                        raise Exception("SSH连接未建立或已断开")
-                
-                    # Get the execution result
-                    response = stdout.read().decode()
-                    error = stderr.read().decode()
-                
-                    ssh.close()
+                        response = stdout.read().decode()
+                        error = stderr.read().decode()
+                        ssh.close()
+                        return response, error
+
+                    response, error = await asyncio.to_thread(_remote_call)
                     if '{"error":"unexpected EOF"}' in response:
                         self.logger.error(f"[System] SSH command error: {response}")
                         return JSONResponse(content={"error": response}, status_code=500)
@@ -297,15 +297,17 @@ class APIRouterHandler:
                         return JSONResponse(content={"error": f"JSON decode error: {e}"}, status_code=500)
             
                 else:
-                    # Send the request directly to the local server
+                    def _local_call():
+                        response = requests.post(
+                            "http://localhost:11434/api/generate",
+                            data=data_json,
+                            timeout=300,
+                        )
+                        response.raise_for_status()
+                        return response.text
+
                     self.logger.info(f"[Local Request] "+"http://localhost:11434/api/generate "+data_json)
-                    response = requests.post(
-                        "http://localhost:11434/api/generate",
-                        data=data_json
-                    )
-                    response.raise_for_status()
-            
-                    response_text = response.text
+                    response_text = await asyncio.to_thread(_local_call)
                     if '{"error":"unexpected EOF"}' in response_text:
                         self.logger.error(f"[System] HTTP request error: {response_text}")
                         return JSONResponse(content={"error": response_text}, status_code=500)
@@ -336,7 +338,7 @@ class APIRouterHandler:
                     # 更新上下文（确保 ai_response 不为空）
                     if not ai_response:
                         ai_response = "[System] 未能获取有效响应"
-                    self.all_messages.append({"role": "system", "content": ai_response})
+                    self.all_messages.append({"role": "assistant", "content": ai_response})
                     
                     # 删除这一行，因为语音播放已经在 chat_handler.process_response 中处理
                     # if self.is_voice_active:
@@ -349,7 +351,7 @@ class APIRouterHandler:
                 formatted_messages = json.dumps(self.all_messages, indent=4, ensure_ascii=False)
             
                 for client in self.ws_handler.connected_clients:
-                    await client.send(datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]+" - __main__ - INFO - "+"[front end] query end")
+                    await self.ws_handler.safe_send(client, datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]+" - __main__ - INFO - "+"[front end] query end")
             
                 return JSONResponse(content={"response": generated_response})
             
@@ -386,7 +388,7 @@ class APIRouterHandler:
                 for msg in data:
                     if "role" not in msg or "content" not in msg:
                         raise ValueError("消息缺少必要字段：role 或 content")
-                    if msg["role"] not in ("system", "user"):
+                    if msg["role"] not in ("system", "user", "assistant"):
                         raise ValueError(f"非法角色类型：{msg['role']}")
                 
                 # 加载合法数据

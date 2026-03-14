@@ -120,6 +120,37 @@
                     <input type="password" id="serper-api-key" name="serper-api-key">
                 </div>
             </div>
+            <div class="config-section">
+                <h4>语音识别配置</h4>
+                <div class="config-item">
+                    <label for="speech-provider">提供方:</label>
+                    <select id="speech-provider" name="speech-provider">
+                        <option value="google">Google</option>
+                        <option value="baidu">Baidu</option>
+                        <option value="whisper_local">Whisper Local</option>
+                    </select>
+                </div>
+                <div class="config-item">
+                    <label for="baidu-app-key">Baidu App Key:</label>
+                    <input type="password" id="baidu-app-key" name="baidu-app-key">
+                </div>
+                <div class="config-item">
+                    <label for="baidu-secret-key">Baidu Secret Key:</label>
+                    <input type="password" id="baidu-secret-key" name="baidu-secret-key">
+                </div>
+                <div class="config-item">
+                    <label for="whisper-model">Whisper Model:</label>
+                    <input type="text" id="whisper-model" name="whisper-model" placeholder="small">
+                </div>
+                <div class="config-item">
+                    <label for="whisper-device">Whisper Device:</label>
+                    <input type="text" id="whisper-device" name="whisper-device" placeholder="cuda">
+                </div>
+                <div class="config-item">
+                    <label for="whisper-compute-type">Whisper Compute Type:</label>
+                    <input type="text" id="whisper-compute-type" name="whisper-compute-type" placeholder="float16">
+                </div>
+            </div>
             <div class="config-buttons">
                 <button onclick="saveConfig()">保存</button>
                 <button onclick="closeConfigDialog()">取消</button>
@@ -146,6 +177,7 @@
         let isReasonOn = false; 
 	    let isSpeechOn = false;
 	    let isVoiceActive = true;
+        let voiceToggleInFlight = false;
         let context = "";
 	    let textarea;
         let terminalOutput;
@@ -166,6 +198,79 @@
             line.style.color = '#ff0000'; // Red color for errors
             line.textContent = text;
             return line;
+        }
+
+        function sanitizeHtml(html) {
+            const template = document.createElement('template');
+            template.innerHTML = html;
+
+            const allowedTags = new Set([
+                'A', 'B', 'BLOCKQUOTE', 'BR', 'CODE', 'DIV', 'EM', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6',
+                'HR', 'I', 'LI', 'OL', 'P', 'PRE', 'SPAN', 'STRONG', 'TABLE', 'TBODY', 'TD', 'TH', 'THEAD',
+                'TR', 'UL'
+            ]);
+
+            const isSafeUrl = (url) => {
+                if (!url) return false;
+                const trimmed = String(url).trim();
+                if (trimmed.startsWith('#')) return true;
+                try {
+                    const parsed = new URL(trimmed, window.location.href);
+                    return parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'mailto:';
+                } catch {
+                    return false;
+                }
+            };
+
+            const walk = (root) => {
+                const nodes = Array.from(root.querySelectorAll('*'));
+                for (const el of nodes) {
+                    const tag = el.tagName;
+                    if (!allowedTags.has(tag)) {
+                        const textNode = document.createTextNode(el.textContent || '');
+                        el.replaceWith(textNode);
+                        continue;
+                    }
+
+                    for (const attr of Array.from(el.attributes)) {
+                        const name = attr.name.toLowerCase();
+                        const value = attr.value;
+                        if (name.startsWith('on')) {
+                            el.removeAttribute(attr.name);
+                            continue;
+                        }
+                        if (name === 'href') {
+                            if (!isSafeUrl(value)) {
+                                el.removeAttribute(attr.name);
+                                continue;
+                            }
+                            el.setAttribute('rel', 'noopener noreferrer nofollow');
+                            el.setAttribute('target', '_blank');
+                            continue;
+                        }
+                        if (name === 'src') {
+                            el.removeAttribute(attr.name);
+                            continue;
+                        }
+                        if (name === 'style') {
+                            el.removeAttribute(attr.name);
+                            continue;
+                        }
+                        if (name === 'class' || name === 'title' || name === 'aria-label') {
+                            continue;
+                        }
+                        el.removeAttribute(attr.name);
+                    }
+                }
+            };
+
+            walk(template.content);
+            return template.innerHTML;
+        }
+
+        function safeMarkdownToHtml(markdownText) {
+            const rawHtml = marked.parse(String(markdownText ?? ''));
+            return sanitizeHtml(rawHtml);
         }
     
         // Define loadModels function before it's called
@@ -264,36 +369,63 @@
             terminalOutput = document.getElementById('terminal-output');
             setVoiceActive(true);
             setSearchOn(true);
-            // WebSocket初始化逻辑...
-            socket = new WebSocket('ws://localhost:8765');
-            socket.addEventListener('message', (event) => {
-                const newLine = document.createElement('p');
-                newLine.textContent = event.data;
-                terminalOutput.appendChild(newLine);
-                terminalOutput.scrollTop = terminalOutput.scrollHeight;
 
-                if (event.data.startsWith("VoicePrompt:") && isVoiceActive) { // 检查语音是否激活
-                    const prompt = event.data.replace("VoicePrompt: ", "");
-                    document.getElementById('prompt').value = prompt;
-                    sendQuery();
-                } else if (event.data.startsWith("[front end] query end")) {
-                    socket.send("QueryComplete");
-                    console.log("Sent QueryComplete to backend");
+            const initWebSocket = async () => {
+                let wsPort = 8765;
+                try {
+                    const resp = await fetch('/get-config');
+                    if (resp.ok) {
+                        const cfg = await resp.json();
+                        if (cfg && typeof cfg.WEBSOCKET_PORT === 'number') wsPort = cfg.WEBSOCKET_PORT;
+                    }
+                } catch (e) {
+                    terminalOutput.appendChild(createErrorLine('获取配置失败，使用默认WS端口'));
                 }
-            });
-            socket.addEventListener('error', (event) => {
-                console.error('WebSocket error:', event);
-                terminalOutput.appendChild(createErrorLine('WebSocket连接错误'));
-            });
-            socket.addEventListener('open', (event) => {
-                console.log('WebSocket connection established');
-                terminalOutput.appendChild(createInfoLine('WebSocket连接已建立'));
-            });
-            socket.addEventListener('close', () => {
-                isSocketActive = false;
-                console.log('WebSocket connection closed');
-                terminalOutput.appendChild(createErrorLine('WebSocket连接已关闭'));
-            });
+                socket = new WebSocket(`ws://${window.location.hostname}:${wsPort}`);
+
+                socket.addEventListener('message', (event) => {
+                    const newLine = document.createElement('p');
+                    newLine.textContent = event.data;
+                    terminalOutput.appendChild(newLine);
+                    terminalOutput.scrollTop = terminalOutput.scrollHeight;
+    
+                    if (event.data.startsWith("VoiceStatus:")) {
+                        const status = event.data.replace("VoiceStatus:", "").trim();
+                        const desiredState = status === "on";
+                        if (isVoiceActive !== desiredState) {
+                            isVoiceActive = desiredState;
+                            const voiceButton = document.getElementById('voice-toggle');
+                            voiceButton.textContent = isVoiceActive ? 'Voice On' : 'Voice Off';
+                            voiceButton.classList.toggle('on', isVoiceActive);
+                            voiceButton.classList.toggle('off', !isVoiceActive);
+                            isSpeechOn = isVoiceActive;
+                            if (!isVoiceActive) stopSpeech();
+                        }
+                    } else if (event.data.startsWith("VoicePrompt:") && isVoiceActive) { // 检查语音是否激活
+                        const prompt = event.data.replace("VoicePrompt: ", "");
+                        document.getElementById('prompt').value = prompt;
+                        sendQuery();
+                    } else if (event.data.startsWith("[front end] query end")) {
+                        socket.send("QueryComplete");
+                        console.log("Sent QueryComplete to backend");
+                    }
+                });
+                socket.addEventListener('error', (event) => {
+                    console.error('WebSocket error:', event);
+                    terminalOutput.appendChild(createErrorLine('WebSocket连接错误'));
+                });
+                socket.addEventListener('open', (event) => {
+                    console.log('WebSocket connection established');
+                    terminalOutput.appendChild(createInfoLine('WebSocket连接已建立'));
+                });
+                socket.addEventListener('close', () => {
+                    isSocketActive = false;
+                    console.log('WebSocket connection closed');
+                    terminalOutput.appendChild(createErrorLine('WebSocket连接已关闭'));
+                });
+            };
+
+            initWebSocket();
             // Listen for the keydown event of the text box
             textarea.addEventListener('keydown', function (event) {
                 if (event.key === 'Enter' && !event.shiftKey) {
@@ -373,7 +505,7 @@
                     const aiResponseDiv = document.getElementById('ai-response');
                     const userQuestion = document.createElement('div');
                     userQuestion.classList.add('user-question');
-                    userQuestion.innerHTML = `${marked.parse('User')} ${marked.parse(prompt)}`;
+                    userQuestion.innerHTML = `${safeMarkdownToHtml('User')} ${safeMarkdownToHtml(prompt)}`;
                     aiResponseDiv.appendChild(userQuestion);
 
                     const aiResponseText = result.response;
@@ -386,21 +518,21 @@
                             aiThinking.classList.add('ai-thinking');
                             const thinkingText = aiResponseText.substring(thinkingStartIndex + 7, thinkingEndIndex);
                             convertedText = convertUrlsToLinks(thinkingText);
-                            aiThinking.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(convertedText)}`;
+                            aiThinking.innerHTML = `${safeMarkdownToHtml(selectedModel)} ${safeMarkdownToHtml(convertedText)}`;
                             aiResponseDiv.appendChild(aiThinking);
                         }
                         const aiNormalResponse = document.createElement('div');
                         aiNormalResponse.classList.add('ai-response-normal');
                         const normalResponseText = aiResponseText.substring(thinkingEndIndex + 8);
                         convertedText = convertUrlsToLinks(normalResponseText);
-                        aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(convertedText)}`;
+                        aiNormalResponse.innerHTML = `${safeMarkdownToHtml(selectedModel)} ${safeMarkdownToHtml(convertedText)}`;
                         aiResponseDiv.appendChild(aiNormalResponse);
 
                     } else {
                         const aiNormalResponse = document.createElement('div');
                         aiNormalResponse.classList.add('ai-response-normal');
                         convertedText = convertUrlsToLinks(aiResponseText);
-                        aiNormalResponse.innerHTML = `${marked.parse(selectedModel)} ${marked.parse(convertedText)}`;
+                        aiNormalResponse.innerHTML = `${safeMarkdownToHtml(selectedModel)} ${safeMarkdownToHtml(convertedText)}`;
                         aiResponseDiv.appendChild(aiNormalResponse);
                     }
                     context = result.context;
@@ -571,7 +703,7 @@
         
             // 将匹配到的网址替换为超链接
             return text.replace(urlRegex, function(url) {
-                return `[${url}]`;
+                return `[${url}](${url})`;
             });
 	}
 
@@ -643,15 +775,20 @@
         }
 
         async function setVoiceActive(desiredState) {
+            if (voiceToggleInFlight) return;
             if (isVoiceActive === desiredState) return;
+            voiceToggleInFlight = true;
             const previousState = isVoiceActive;
             isVoiceActive = desiredState;
             const voiceButton = document.getElementById('voice-toggle');
-            voiceButton.textContent = isVoiceActive ? 'Voice On' : 'Voice Off';
-            voiceButton.classList.toggle('on', isVoiceActive);
-            voiceButton.classList.toggle('off', !isVoiceActive);
+            voiceButton.disabled = true;
+            const applyVoiceUi = () => {
+                voiceButton.textContent = isVoiceActive ? 'Voice On' : 'Voice Off';
+                voiceButton.classList.toggle('on', isVoiceActive);
+                voiceButton.classList.toggle('off', !isVoiceActive);
+            };
+            applyVoiceUi();
         
-            // 同步语音播放状态
             isSpeechOn = isVoiceActive;
         
             try {
@@ -661,7 +798,12 @@
                     body: JSON.stringify({ isVoiceActive: isVoiceActive })
                 });
                 const data = await response.json();
-                if (data.status === 'success') {
+                if (response.ok && data.status === 'success') {
+                    if (typeof data.isVoiceActive === 'boolean') {
+                        isVoiceActive = data.isVoiceActive;
+                    }
+                    isSpeechOn = isVoiceActive;
+                    applyVoiceUi();
                     console.log(`Voice recognition ${isVoiceActive ? 'enabled' : 'disabled'}`);
                     if (!isVoiceActive) {
                         stopSpeech(); // 停止语音播放
@@ -673,9 +815,11 @@
                 console.error('Error toggling voice:', error);
                 // 回滚状态
                 isVoiceActive = previousState;
-                voiceButton.textContent = isVoiceActive ? 'Voice On' : 'Voice Off';
-                voiceButton.classList.toggle('on', isVoiceActive);
-                voiceButton.classList.toggle('off', !isVoiceActive);
+                isSpeechOn = isVoiceActive;
+                applyVoiceUi();
+            } finally {
+                voiceToggleInFlight = false;
+                voiceButton.disabled = false;
             }
         }
 
@@ -770,15 +914,32 @@ async function openConfigDialog() {
         console.log('获取到的配置:', config);
         
         // 填充表单
-        document.getElementById('ssh-host').value = config.SSH_CONFIG.HOST;
-        document.getElementById('ssh-port').value = config.SSH_CONFIG.PORT;
-        document.getElementById('ssh-user').value = config.SSH_CONFIG.USER;
-        document.getElementById('ssh-password').value = config.SSH_CONFIG.PASSWORD;
+        document.getElementById('ssh-host').value = (config.SSH_CONFIG && config.SSH_CONFIG.HOST) ? config.SSH_CONFIG.HOST : '';
+        document.getElementById('ssh-port').value = (config.SSH_CONFIG && config.SSH_CONFIG.PORT) ? config.SSH_CONFIG.PORT : '';
+        document.getElementById('ssh-user').value = (config.SSH_CONFIG && config.SSH_CONFIG.USER) ? config.SSH_CONFIG.USER : '';
+        document.getElementById('ssh-password').value = '';
         
         document.getElementById('websocket-port').value = config.WEBSOCKET_PORT;
         document.getElementById('http-port').value = config.HTTP_PORT;
         
-        document.getElementById('serper-api-key').value = config.WEB_SEARCH_CONFIG.SERPER_API_KEY;
+        document.getElementById('serper-api-key').value = '';
+
+        const providerEl = document.getElementById('speech-provider');
+        if (providerEl) {
+            const provider = (config.SPEECH_RECOGNITION_CONFIG && config.SPEECH_RECOGNITION_CONFIG.PROVIDER) ? config.SPEECH_RECOGNITION_CONFIG.PROVIDER : 'google';
+            providerEl.value = provider;
+        }
+        const baiduAppKeyEl = document.getElementById('baidu-app-key');
+        const baiduSecretKeyEl = document.getElementById('baidu-secret-key');
+        if (baiduAppKeyEl) baiduAppKeyEl.value = '';
+        if (baiduSecretKeyEl) baiduSecretKeyEl.value = '';
+
+        const whisperModelEl = document.getElementById('whisper-model');
+        const whisperDeviceEl = document.getElementById('whisper-device');
+        const whisperComputeTypeEl = document.getElementById('whisper-compute-type');
+        if (whisperModelEl) whisperModelEl.value = (config.SPEECH_RECOGNITION_CONFIG && config.SPEECH_RECOGNITION_CONFIG.WHISPER_MODEL) ? config.SPEECH_RECOGNITION_CONFIG.WHISPER_MODEL : 'small';
+        if (whisperDeviceEl) whisperDeviceEl.value = (config.SPEECH_RECOGNITION_CONFIG && config.SPEECH_RECOGNITION_CONFIG.WHISPER_DEVICE) ? config.SPEECH_RECOGNITION_CONFIG.WHISPER_DEVICE : 'cuda';
+        if (whisperComputeTypeEl) whisperComputeTypeEl.value = (config.SPEECH_RECOGNITION_CONFIG && config.SPEECH_RECOGNITION_CONFIG.WHISPER_COMPUTE_TYPE) ? config.SPEECH_RECOGNITION_CONFIG.WHISPER_COMPUTE_TYPE : '';
         
         // 显示对话框
         document.getElementById('config-dialog').classList.remove('hidden');
@@ -807,6 +968,14 @@ async function saveConfig() {
             HTTP_PORT: parseInt(document.getElementById('http-port').value),
             WEB_SEARCH_CONFIG: {
                 SERPER_API_KEY: document.getElementById('serper-api-key').value
+            },
+            SPEECH_RECOGNITION_CONFIG: {
+                PROVIDER: document.getElementById('speech-provider').value,
+                BAIDU_APP_KEY: document.getElementById('baidu-app-key').value,
+                BAIDU_SECRET_KEY: document.getElementById('baidu-secret-key').value,
+                WHISPER_MODEL: document.getElementById('whisper-model').value,
+                WHISPER_DEVICE: document.getElementById('whisper-device').value,
+                WHISPER_COMPUTE_TYPE: document.getElementById('whisper-compute-type').value
             }
         };
         

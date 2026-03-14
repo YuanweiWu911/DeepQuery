@@ -2,11 +2,13 @@ import speech_recognition as sr
 from asyncio import Queue
 import asyncio
 from .audio_util import AudioUtil
+import os
 import socket
 import random
 import pygame
 import time
 import re
+import threading
 
 class VoiceRecognitionService:
     def __init__(self, logger, ws_handler=None):
@@ -28,6 +30,12 @@ class VoiceRecognitionService:
         self.audio_util = AudioUtil()
         # 预编译唤醒词正则，提高匹配效率
         self.wake_word_pattern = re.compile(f"({'|'.join(self.wake_words)})")
+        self._whisper_model = None
+        self._whisper_lock = threading.Lock()
+
+    def start(self):
+        self.is_listening = True
+        self.reset_state()
 
     def stop(self):
         """停止语音服务并清理资源"""
@@ -123,9 +131,27 @@ class VoiceRecognitionService:
                             audio = await asyncio.to_thread(
                                 self.recognizer.listen, source, timeout=1, phrase_time_limit=10
                             )
-                            text = await asyncio.to_thread(
-                                self.recognizer.recognize_google, audio, language="zh-CN"
-                            )
+                            from config import config
+                            speech_cfg = config.get("SPEECH_RECOGNITION_CONFIG", {}) if isinstance(config, dict) else {}
+                            provider = str(speech_cfg.get("PROVIDER", "google")).strip().lower()
+
+                            if provider == "whisper_local":
+                                recognize_fn = self._recognize_whisper
+                                text = await asyncio.to_thread(recognize_fn, audio)
+                            elif provider == "baidu":
+                                app_key = str(speech_cfg.get("BAIDU_APP_KEY", "")).strip()
+                                secret_key = str(speech_cfg.get("BAIDU_SECRET_KEY", "")).strip()
+                                if not app_key or not secret_key:
+                                    raise sr.RequestError("Baidu credentials missing")
+                                recognize_fn = self.recognizer.recognize_baidu
+                                text = await asyncio.to_thread(
+                                    recognize_fn, audio, app_key, secret_key, language="zh"
+                                )
+                            else:
+                                recognize_fn = self.recognizer.recognize_google
+                                text = await asyncio.to_thread(
+                                    recognize_fn, audio, language="zh-CN"
+                                )
                             
                             if not text: continue
                             self.last_activity_time = time.time()
@@ -160,6 +186,8 @@ class VoiceRecognitionService:
                             await asyncio.sleep(2)
                             break
 
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 self.logger.error(f"[Voice] 运行异常: {e}")
                 retry_count += 1
@@ -170,3 +198,57 @@ class VoiceRecognitionService:
                     break
 
         self.logger.info("[Voice] 语音服务已完全停止")
+
+    def _recognize_whisper(self, audio: sr.AudioData) -> str:
+        from config import config
+        speech_cfg = config.get("SPEECH_RECOGNITION_CONFIG", {}) if isinstance(config, dict) else {}
+        model_name = str(speech_cfg.get("WHISPER_MODEL", "small")).strip() or "small"
+        device = str(speech_cfg.get("WHISPER_DEVICE", "cuda")).strip().lower() or "cuda"
+        compute_type = str(speech_cfg.get("WHISPER_COMPUTE_TYPE", "")).strip().lower()
+        download_root = str(speech_cfg.get("WHISPER_DOWNLOAD_ROOT", "")).strip()
+        if download_root:
+            os.makedirs(download_root, exist_ok=True)
+
+        try:
+            import numpy as np
+        except Exception as e:
+            raise sr.RequestError(f"numpy missing: {e}")
+
+        raw = audio.get_raw_data(convert_rate=16000, convert_width=2)
+        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+
+        with self._whisper_lock:
+            if self._whisper_model is None:
+                try:
+                    from faster_whisper import WhisperModel
+                except Exception as e:
+                    raise sr.RequestError(f"faster-whisper missing: {e}")
+
+                if not compute_type:
+                    compute_type = "float16" if device == "cuda" else "int8"
+                try:
+                    kwargs = {"device": device, "compute_type": compute_type}
+                    if download_root:
+                        kwargs["download_root"] = download_root
+                    self._whisper_model = WhisperModel(model_name, **kwargs)
+                except Exception as e:
+                    if device != "cpu":
+                        try:
+                            kwargs = {"device": "cpu", "compute_type": "int8"}
+                            if download_root:
+                                kwargs["download_root"] = download_root
+                            self._whisper_model = WhisperModel(model_name, **kwargs)
+                        except Exception as e2:
+                            raise sr.RequestError(
+                                f"whisper_local init failed: {e2}. If HuggingFace is unreachable, download the model in advance and set WHISPER_MODEL to a local folder, or set WHISPER_DOWNLOAD_ROOT to an existing cache directory."
+                            )
+                    else:
+                        raise sr.RequestError(
+                            f"whisper_local init failed: {e}. If HuggingFace is unreachable, download the model in advance and set WHISPER_MODEL to a local folder, or set WHISPER_DOWNLOAD_ROOT to an existing cache directory."
+                        )
+
+            segments, info = self._whisper_model.transcribe(samples, language="zh")
+            text = "".join(seg.text for seg in segments).strip()
+            if not text:
+                raise sr.UnknownValueError()
+            return text
