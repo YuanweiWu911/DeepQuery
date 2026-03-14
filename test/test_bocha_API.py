@@ -1,5 +1,6 @@
 import requests
 import json
+import os
 
 url = "https://api.bochaai.com/v1/web-search"
 
@@ -11,7 +12,7 @@ payload = json.dumps({
 })
 
 headers = {
-  'Authorization': 'Bearer sk-3d8872c8f1174be3ad314211350303d5',
+  'Authorization': f"Bearer {os.getenv('BOCHA_API_KEY', '')}",
   'Content-Type': 'application/json'
 }
 

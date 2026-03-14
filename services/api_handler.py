@@ -40,7 +40,7 @@ class APIRouterHandler:
         self.ws_handler = ws_handler
         self.templates = templates
         self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 指向项目根目录
-        self.is_remote = False 
+        self.is_remote = True 
         self.all_messages = [{"role": "system", "content": "You are a helpful assistant"}]
         self.voice_task = None
         self.is_voice_active = True  # 默认开启语音识别

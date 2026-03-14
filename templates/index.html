@@ -38,7 +38,7 @@
         <!-- 夜间模式切换按钮 -->
         <button id="theme-toggle" onclick="toggleTheme()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">🌙</button>
         <!-- local/remote toggle button -->
-        <button id="local-remote-toggle" class="off" onclick="toggleLocalRemote()">Local</button>
+        <button id="local-remote-toggle" class="on" onclick="toggleLocalRemote()">Remote</button>
         <label for="model-select" class="model-select-label"></label>
         <select id="model-select">
             <option value="qwq">qwq</option>
@@ -57,9 +57,9 @@
 	    <!-- New ReadFile button -->
             <button id="readfile-button" onclick="readFile()" onmousedown="this.classList.add('button-clicked')" onmouseup="this.classList.remove('button-clicked')">ReadFile</button>
 	    <!-- voice toggle button -->
-            <button id="voice-toggle" class="off" onclick="toggleVoice()">Voice</button>
+            <button id="voice-toggle" class="on" onclick="toggleVoice()">Voice On</button>
             <!-- Search on/off button -->
-            <button id="search-toggle" class="off" onclick="toggleSearch()">Search</button>
+            <button id="search-toggle" class="on" onclick="toggleSearch()">Search</button>
             <!-- Reason button -->
             <button id="reason-toggle" class="off" onclick="toggleReason()">Reason</button>
         </div>
@@ -138,11 +138,11 @@
         let utterance = null; 
 	    let audioElement = null;
         let voiceEventSource = null;
-        let isRemote = false; 
+        let isRemote = true; 
         let isTerminalVisible = false;
         let isGPUInfoVisible = false;
         let isSocketActive = true;
-        let isSearchOn = false; 
+        let isSearchOn = true; 
         let isReasonOn = false; 
 	    let isSpeechOn = false;
 	    let isVoiceActive = true;
@@ -262,8 +262,8 @@
             reasonToggle = document.getElementById('reason-toggle'); 
             const textarea = document.getElementById('prompt');
             terminalOutput = document.getElementById('terminal-output');
-            // 自动启动语音识别
-            toggleVoice();  // 初始化状态
+            setVoiceActive(true);
+            setSearchOn(true);
             // WebSocket初始化逻辑...
             socket = new WebSocket('ws://localhost:8765');
             socket.addEventListener('message', (event) => {
@@ -539,7 +539,11 @@
 
         // New function to toggle the search on/off button state
         function toggleSearch() {
-            isSearchOn = !isSearchOn;
+            setSearchOn(!isSearchOn);
+        }
+
+        function setSearchOn(desiredState) {
+            isSearchOn = desiredState;
             if (isSearchOn) {
                 searchToggle.classList.remove('off');
                 searchToggle.classList.add('on');
@@ -635,7 +639,13 @@
         }
 
         async function toggleVoice() {
-            isVoiceActive = !isVoiceActive;
+            await setVoiceActive(!isVoiceActive);
+        }
+
+        async function setVoiceActive(desiredState) {
+            if (isVoiceActive === desiredState) return;
+            const previousState = isVoiceActive;
+            isVoiceActive = desiredState;
             const voiceButton = document.getElementById('voice-toggle');
             voiceButton.textContent = isVoiceActive ? 'Voice On' : 'Voice Off';
             voiceButton.classList.toggle('on', isVoiceActive);
@@ -662,7 +672,7 @@
             } catch (error) {
                 console.error('Error toggling voice:', error);
                 // 回滚状态
-                isVoiceActive = !isVoiceActive;
+                isVoiceActive = previousState;
                 voiceButton.textContent = isVoiceActive ? 'Voice On' : 'Voice Off';
                 voiceButton.classList.toggle('on', isVoiceActive);
                 voiceButton.classList.toggle('off', !isVoiceActive);

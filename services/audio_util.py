@@ -6,42 +6,44 @@ import asyncio
 class AudioUtil:
     @staticmethod
     async def say_response(text, voice="zh-CN-XiaoyiNeural", logger=None):
-        """使用 edge_tts 生成音频并通过 pygame 播放
-        
-        Args:
-            text (str): 要播放的文本
-            voice (str): 使用的语音模型，默认为 "zh-CN-YunyangNeural"
-            logger (logging.Logger, optional): 日志记录器，用于记录播放状态
-            
-            "zh-CN-YunxiNeural"    # 青年男声（默认）
-            "zh-CN-YunyangNeural"   # 新闻男声
-            "zh-CN-XiaoxiaoNeural"  # 年轻女声（多情感）
-            "zh-CN-XiaoyiNeural"    # 少女音
-            "zh-CN-YunjianNeural"   # 成熟男声
-
-        """
-        try:
-            if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
-                pygame.mixer.music.stop()
-            communicate = edge_tts.Communicate(text, voice)
-            audio_stream = BytesIO()
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio" and "data" in chunk:
-                    audio_stream.write(chunk["data"])
-            audio_stream.seek(0)
-
-            pygame.mixer.init()
-            pygame.mixer.music.load(audio_stream)
-            pygame.mixer.music.play()
-            
-            # 等待播放完成
-            while pygame.mixer.music.get_busy():
-                await asyncio.sleep(0.1)
+        """使用 edge_tts 生成音频并通过 pygame 播放"""
+        max_retries = 2
+        for attempt in range(max_retries + 1):
+            try:
+                if pygame.mixer.get_init() and pygame.mixer.music.get_busy():
+                    pygame.mixer.music.stop()
                 
-            if logger:
-                logger.info(f"[Voice] 播放语音: {text[:50]}...")
-            
-        except Exception as e:
-            if logger:
-                logger.error(f"[Voice] 语音播放失败: {str(e)}")
+                communicate = edge_tts.Communicate(text, voice)
+                audio_stream = BytesIO()
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio" and "data" in chunk:
+                        audio_stream.write(chunk["data"])
+                
+                if audio_stream.tell() == 0:
+                    raise ValueError("生成的音频数据为空")
+
+                audio_stream.seek(0)
+                pygame.mixer.init()
+                pygame.mixer.music.load(audio_stream)
+                pygame.mixer.music.play()
+                
+                while pygame.mixer.music.get_busy():
+                    await asyncio.sleep(0.1)
+                
+                if logger:
+                    logger.info(f"[Voice] 播放语音成功: {text[:50]}...")
+                break # 成功则退出重试循环
+
+            except asyncio.CancelledError:
+                if logger:
+                    logger.info("[Voice] 语音播放任务被取消")
+                raise
+            except Exception as e:
+                if attempt < max_retries:
+                    if logger:
+                        logger.warning(f"[Voice] 语音播放尝试 {attempt + 1} 失败，正在重试... 错误: {str(e)}")
+                    await asyncio.sleep(1) # 等待一秒后重试
+                    continue
+                if logger:
+                    logger.error(f"[Voice] 语音播放最终失败: {str(e)}")
 

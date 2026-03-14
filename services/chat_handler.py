@@ -13,7 +13,7 @@ class ChatHandler:
     def __init__(self, logger):
         self.logger = logger
         self.audio_util = AudioUtil()
-        self.is_voice_active = False
+        self.is_voice_active = True
 
     # 添加新方法
     def set_voice_active(self, status: bool):
