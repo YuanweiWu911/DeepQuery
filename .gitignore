@@ -16,7 +16,7 @@ env/
 build/
 dist/
 *.spec
-
+whisper_models/
 config.json
 
 .DS_Store
