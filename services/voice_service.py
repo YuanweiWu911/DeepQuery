@@ -206,6 +206,11 @@ class VoiceRecognitionService:
         device = str(speech_cfg.get("WHISPER_DEVICE", "cuda")).strip().lower() or "cuda"
         compute_type = str(speech_cfg.get("WHISPER_COMPUTE_TYPE", "")).strip().lower()
         download_root = str(speech_cfg.get("WHISPER_DOWNLOAD_ROOT", "")).strip()
+        language = str(speech_cfg.get("WHISPER_LANGUAGE", "zh")).strip() or "zh"
+        beam_size_str = str(speech_cfg.get("WHISPER_BEAM_SIZE", "")).strip()
+        vad_filter_str = str(speech_cfg.get("WHISPER_VAD_FILTER", "")).strip().lower()
+        vad_min_silence_ms_str = str(speech_cfg.get("WHISPER_VAD_MIN_SILENCE_MS", "")).strip()
+        local_only_str = str(speech_cfg.get("WHISPER_LOCAL_ONLY", "")).strip().lower()
         if download_root:
             os.makedirs(download_root, exist_ok=True)
 
@@ -230,14 +235,32 @@ class VoiceRecognitionService:
                     kwargs = {"device": device, "compute_type": compute_type}
                     if download_root:
                         kwargs["download_root"] = download_root
-                    self._whisper_model = WhisperModel(model_name, **kwargs)
+                    if local_only_str in ("1", "true", "yes", "on"):
+                        kwargs["local_files_only"] = True
+                    try:
+                        self._whisper_model = WhisperModel(model_name, **kwargs)
+                    except TypeError as te:
+                        if "local_files_only" in kwargs:
+                            kwargs.pop("local_files_only", None)
+                            self._whisper_model = WhisperModel(model_name, **kwargs)
+                        else:
+                            raise te
                 except Exception as e:
                     if device != "cpu":
                         try:
                             kwargs = {"device": "cpu", "compute_type": "int8"}
                             if download_root:
                                 kwargs["download_root"] = download_root
-                            self._whisper_model = WhisperModel(model_name, **kwargs)
+                            if local_only_str in ("1", "true", "yes", "on"):
+                                kwargs["local_files_only"] = True
+                            try:
+                                self._whisper_model = WhisperModel(model_name, **kwargs)
+                            except TypeError as te:
+                                if "local_files_only" in kwargs:
+                                    kwargs.pop("local_files_only", None)
+                                    self._whisper_model = WhisperModel(model_name, **kwargs)
+                                else:
+                                    raise te
                         except Exception as e2:
                             raise sr.RequestError(
                                 f"whisper_local init failed: {e2}. If HuggingFace is unreachable, download the model in advance and set WHISPER_MODEL to a local folder, or set WHISPER_DOWNLOAD_ROOT to an existing cache directory."
@@ -247,7 +270,23 @@ class VoiceRecognitionService:
                             f"whisper_local init failed: {e}. If HuggingFace is unreachable, download the model in advance and set WHISPER_MODEL to a local folder, or set WHISPER_DOWNLOAD_ROOT to an existing cache directory."
                         )
 
-            segments, info = self._whisper_model.transcribe(samples, language="zh")
+            transcribe_kwargs = {"language": language}
+            try:
+                beam_size = int(beam_size_str) if beam_size_str else None
+            except Exception:
+                beam_size = None
+            if beam_size:
+                transcribe_kwargs["beam_size"] = beam_size
+            vad_filter = vad_filter_str in ("1", "true", "yes", "on")
+            if vad_filter:
+                transcribe_kwargs["vad_filter"] = True
+                try:
+                    ms = int(vad_min_silence_ms_str) if vad_min_silence_ms_str else None
+                except Exception:
+                    ms = None
+                if ms is not None:
+                    transcribe_kwargs["vad_parameters"] = {"min_silence_duration_ms": ms}
+            segments, info = self._whisper_model.transcribe(samples, **transcribe_kwargs)
             text = "".join(seg.text for seg in segments).strip()
             if not text:
                 raise sr.UnknownValueError()
