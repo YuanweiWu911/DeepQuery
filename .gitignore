@@ -1,0 +1,5 @@
+__pycache__
+services/__pycache__
+test/__pycache__
+utils/__pycache__
+config.json

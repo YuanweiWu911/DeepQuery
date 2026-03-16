@@ -184,3 +184,8 @@ async def save_config(request: Request):
             return {"success": False, "message": "保存配置文件失败"}
     except Exception as e:
         return {"success": False, "message": str(e)}
+
+if __name__ == "__main__":
+    # 运行主函数
+    import asyncio
+    asyncio.run(main())
