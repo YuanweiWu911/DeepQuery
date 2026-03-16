@@ -1,3 +1,4 @@
+whisper_models
 __pycache__/
 services/__pycache__/
 test/__pycache__/
