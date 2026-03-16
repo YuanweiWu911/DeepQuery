@@ -12,3 +12,6 @@ SpeechRecognition==3.14.1
 python-multipart>=0.0.6
 pynvml>=11.5.0
 aiofiles>=23.2.1
+edge-tts>=6.1.18
+faster-whisper>=1.0.3
+numpy>=1.26.0

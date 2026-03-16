@@ -19,12 +19,12 @@ def create_tray_icon():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     icon_path = os.path.abspath(os.path.join(base_dir, '../static/favicon.ico'))  # 使用绝对路径
     image = Image.open(icon_path)
+    from config import HTTP_PORT
     menu = pystray.Menu(
-        pystray.MenuItem('打开界面', lambda: webbrowser.open('http://localhost:8000')),
+        pystray.MenuItem('打开界面', lambda: webbrowser.open(f'http://localhost:{HTTP_PORT}')),
         pystray.MenuItem('退出程序', terminate_app)
     )
     tray_icon = pystray.Icon("name", image, "DeepQuery", menu)
-    tray_icon.run()
     return tray_icon
 
 def terminate_app():

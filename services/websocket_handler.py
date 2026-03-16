@@ -17,6 +17,7 @@ class WebSocketHandler:
         """Initializes WebSocket handler with empty client set and log queue."""
         self.log_queue = Queue()
         self.connected_clients = set()
+        self._send_locks = {}
         self.logger = logger
 
     async def handle_ws(self, websocket, path=None):
@@ -32,33 +33,35 @@ class WebSocketHandler:
             3. Handles graceful disconnect
         """
         self.connected_clients.add(websocket)
+        self._send_locks[websocket] = asyncio.Lock()
         try:
             async for message in websocket:
                 if message == "QueryComplete":
                     self.logger.info("[WebSocket] 收到前端 QueryComplete 信号")
-                elif not self.log_queue.empty():
-                    log_entry = await self.log_queue.get()
-                    await websocket.send(log_entry)
-        except websockets.exceptions.ConnectionClosedOK:
+        except websockets.exceptions.ConnectionClosed:
             pass
         finally:
-            self.connected_clients.remove(websocket)
+            self.connected_clients.discard(websocket)
+            self._send_locks.pop(websocket, None)
+
+    async def safe_send(self, websocket, message: str):
+        lock = self._send_locks.get(websocket)
+        if lock is None:
+            return
+        async with lock:
+            await websocket.send(message)
 
     async def log_consumer(self):
         # 处理日志消费的逻辑
         while True:
-            if not self.log_queue.empty():
-                log_entry = await self.log_queue.get()
-#               if not self.connected_clients:
-#                   self.logger.warning("[WebSocket] 无活跃客户端")
-                for client in self.connected_clients:
-                    try:
-                        await client.send(log_entry)
-                    except websockets.exceptions.ConnectionClosedOK:
-                        self.connected_clients.remove(client)
-            await asyncio.sleep(0.01)
+            log_entry = await self.log_queue.get()
+            for client in list(self.connected_clients):
+                try:
+                    await self.safe_send(client, log_entry)
+                except websockets.exceptions.ConnectionClosed:
+                    self.connected_clients.discard(client)
+                    self._send_locks.pop(client, None)
 
     async def start_ws_server(self):
         server = await websockets.serve(self.handle_ws, "localhost", 8765)
         await server.wait_closed()
-

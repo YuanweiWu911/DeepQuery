@@ -2,29 +2,46 @@ import speech_recognition as sr
 from asyncio import Queue
 import asyncio
 from .audio_util import AudioUtil
+import os
 import socket
+import random
+import pygame
+import time
+import re
+import threading
 
 class VoiceRecognitionService:
     def __init__(self, logger, ws_handler=None):
         self.logger = logger
         self.recognizer = sr.Recognizer()
+        # 优化：启用动态能量阈值，减少手动校准需求
+        self.recognizer.dynamic_energy_threshold = True
+        self.recognizer.energy_threshold = 300 
         self.is_listening = True
         self.audio_queue = Queue()
-        self.last_query = ""
         self.full_query = ""
         self.has_started = False
         self.unrecognized_count = 0
-        self.max_retries = 3  # 最大重试次数
-        self.wake_words = ["小弟", "小迪", "小D","老弟"]
-        # 添加结束语列表
+        self.last_activity_time = time.time()
+        self.max_retries = 3
+        self.wake_words = ["小弟", "小迪", "小D", "老弟", "小安"]
         self.end_phrases = ["就这样", "结束", "完毕", "谢谢", "好了", "退出", "结束对话", "请回答"]
         self.ws_handler = ws_handler
         self.audio_util = AudioUtil()
-    
+        # 预编译唤醒词正则，提高匹配效率
+        self.wake_word_pattern = re.compile(f"({'|'.join(self.wake_words)})")
+        self._whisper_model = None
+        self._whisper_lock = threading.Lock()
+
+    def start(self):
+        self.is_listening = True
+        self.reset_state()
+
     def stop(self):
+        """停止语音服务并清理资源"""
         self.is_listening = False
-        self.logger.info("[Voice] 语音服务已停止")
-        # 增加清理音频队列逻辑
+        self.logger.info("[Voice] 正在停止语音服务...")
+        # 清理队列
         while not self.audio_queue.empty():
             try:
                 self.audio_queue.get_nowait()
@@ -33,197 +50,205 @@ class VoiceRecognitionService:
         self.reset_state()
 
     def reset_state(self):
+        """重置会话状态"""
         self.full_query = ""
         self.has_started = False
         self.unrecognized_count = 0
-        self.logger.info("[Voice] 会话状态已重置，准备新一轮对话")        
-        
-    def remove_leading_wake_words(self, text, wake_word):
-        """
-        从文本的开头去除重复的唤醒词。
-        
-        :param text: 原始文本
-        :param wake_word: 唤醒词
-        :return: 去除开头重复唤醒词后的文本
-        """
-        while text.startswith(wake_word):
-            text = text[len(wake_word):].lstrip()
-        return text
-    
-    # 添加结束语检测方法
+        self.last_activity_time = time.time()
+        self.logger.info("[Voice] 会话状态已重置")
+
     def detect_end_phrase(self, text):
-        """
-        检测文本中是否包含结束语。
-        
-        :param text: 需要检测的文本
-        :return: 如果包含结束语返回True，否则返回False
-        """
+        """检测结束语"""
         for phrase in self.end_phrases:
             if phrase in text:
                 return True
         return False
 
+    async def submit_query(self):
+        """提交查询并播报确认"""
+        if self.full_query:
+            # 移除可能误录入的结束语
+            for phrase in self.end_phrases:
+                self.full_query = self.full_query.replace(phrase, "").strip()
+            
+            if not self.full_query:
+                self.reset_state()
+                return None
+
+            self.logger.info(f"[Voice] 提交查询: {self.full_query}")
+            await self.audio_util.say_response(f"好的，您的问题是：{self.full_query}。请稍后。", logger=self.logger)
+            await self.audio_queue.put(self.full_query)
+            query = self.full_query
+            self.reset_state()
+            return query
+        return None
+
+    async def say_ai_response(self, text):
+        """播报 AI 回复"""
+        if text:
+            await self.audio_util.say_response(text, logger=self.logger)
+
+    def _is_ai_talking(self):
+        """检查 AI 是否正在说话"""
+        return pygame.mixer.get_init() and pygame.mixer.music.get_busy()
+
+    async def _handle_wake_word(self, text):
+        """正则匹配唤醒词并处理"""
+        match = self.wake_word_pattern.search(text)
+        if match:
+            wake_word = match.group(1)
+            content = text.split(wake_word, 1)[-1].strip()
+            
+            if not self.has_started:
+                self.has_started = True
+                self.full_query = content
+                self.logger.info(f"[Voice] 唤醒: {wake_word}, 初始内容: {content}")
+                responses = ["在", "有什么我能帮你的吗？", "我在呢", "请说"]
+                await self.audio_util.say_response(random.choice(responses), logger=self.logger)
+            else:
+                if content:
+                    self.full_query = (self.full_query + " " + content).strip()
+            return True
+        return False
+
     async def start_listening(self):
-        """核心语音监听循环，包含唤醒词检测和语音识别逻辑"""
+        """主监听循环"""
+        retry_count = 0
         while self.is_listening:
-            mic = None
-            retry_count = 0
             try:
-                # 初始化麦克风
-                mic = sr.Microphone()
-                with mic as source:
-                    # 环境噪声校准
-                    self.recognizer.adjust_for_ambient_noise(source, duration=2)
-                    self.logger.info("[Voice] 麦克风校准完成，开始监听...")
-                    
-                    # 重置重试计数器
-                    retry_count = 0
-                    
-                    # 主监听循环
+                while self._is_ai_talking() and self.is_listening:
+                    await asyncio.sleep(0.5)
+
+                with sr.Microphone() as source:
+                    if retry_count == 0:
+                        self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+                        self.logger.info("[Voice] 麦克风已就绪，等待唤醒...")
+
                     while self.is_listening:
+                        if self._is_ai_talking(): break
+
                         try:
-                            # 实时语音捕获（异步执行同步方法）
                             audio = await asyncio.to_thread(
-                                self.recognizer.listen,
-                                source,
-                                timeout=1,
-                                phrase_time_limit=8  # 延长单次录音时间到5秒
+                                self.recognizer.listen, source, timeout=1, phrase_time_limit=10
                             )
-                            
-                            if not self.is_listening:
-                                break
+                            from config import config
+                            speech_cfg = config.get("SPEECH_RECOGNITION_CONFIG", {}) if isinstance(config, dict) else {}
+                            provider = str(speech_cfg.get("PROVIDER", "google")).strip().lower()
 
-                            # 语音识别（异步执行同步方法）
-                            self.logger.debug("[Voice] 开始语音识别...")
-                            text = await asyncio.to_thread(
-                                self.recognizer.recognize_google,
-                                audio,
-                                language="zh-CN",
-                                show_all=False  # 只返回最佳结果
-                            )
-
-                            if not self.is_listening:
-                                break
-                            
-                            # 唤醒词检测逻辑
-                            wake_word_detected = None
-                            for wake_word in self.wake_words:
-                                if wake_word in text:
-                                    wake_word_detected = wake_word
-                                    break
-
-                            # 如果检测到唤醒词
-                            if wake_word_detected:
-                                if not self.has_started:
-                                    self.has_started = True
-                                    # 使用remove_leading_wake_words去除所有开头的唤醒词
-                                    self.full_query = self.remove_leading_wake_words(text, wake_word_detected)
-                                    self.logger.info(f"[Voice] 检测到唤醒词'{wake_word_detected}'，开始记录查询: {self.full_query}")
-                                    await self.audio_util.say_response("我在")
-                                else:
-                                    # 如果已经处于对话状态，去除所有唤醒词
-                                    self.full_query = self.remove_leading_wake_words(text, wake_word_detected)
-                                    self.logger.info(f"[Voice] 追加查询内容: {self.full_query}")
+                            if provider == "whisper_local":
+                                recognize_fn = self._recognize_whisper
+                                text = await asyncio.to_thread(recognize_fn, audio)
+                            elif provider == "baidu":
+                                app_key = str(speech_cfg.get("BAIDU_APP_KEY", "")).strip()
+                                secret_key = str(speech_cfg.get("BAIDU_SECRET_KEY", "")).strip()
+                                if not app_key or not secret_key:
+                                    raise sr.RequestError("Baidu credentials missing")
+                                recognize_fn = self.recognizer.recognize_baidu
+                                text = await asyncio.to_thread(
+                                    recognize_fn, audio, app_key, secret_key, language="zh"
+                                )
                             else:
-                                # 如果没有检测到唤醒词，直接追加文本
-                                self.full_query = (self.full_query + " " + text).strip()
-                                self.logger.info(f"[Voice] 追加查询内容: {self.full_query}")
+                                recognize_fn = self.recognizer.recognize_google
+                                text = await asyncio.to_thread(
+                                    recognize_fn, audio, language="zh-CN"
+                                )
                             
-                            # 检测结束语
-                            if self.has_started and self.full_query and self.detect_end_phrase(text):
-                                self.logger.info(f"[Voice] 检测到结束语，提交查询: {self.full_query}")
-                                # 从full_query中移除结束语
-                                for end_phrase in self.end_phrases:
-                                    if end_phrase in self.full_query:
-                                        self.full_query = self.full_query.replace(end_phrase, "").strip()
-                                
-                                await self.audio_util.say_response("收到, 让我想想")
-                                await self.audio_queue.put(self.full_query)
-                                self.reset_state()
-                                return self.full_query
-                            
+                            if not text: continue
+                            self.last_activity_time = time.time()
                             self.unrecognized_count = 0
-                            continue
 
-                        except sr.UnknownValueError:
-                                self.logger.warning(f"[Voice] 无法识别语音输入 (环境噪音: {self.recognizer.energy_threshold})")
-                                self.recognizer.adjust_for_ambient_noise(source, duration=1)
-                                self.unrecognized_count += 1
+                            # 唤醒词处理
+                            is_wake = await self._handle_wake_word(text)
+                            if not is_wake and self.has_started:
+                                self.full_query = (self.full_query + " " + text).strip()
+                                self.logger.info(f"[Voice] 记录中: {self.full_query}")
 
-                                # 如果连续2次无法识别且已有累积查询
-                                if self.has_started and self.unrecognized_count >= 2 and self.full_query:
-                                    self.logger.info(f"[Voice] 连续2次未识别，提交查询: {self.full_query}")
-                                    await self.audio_queue.put(self.full_query)
-                                    self.reset_state()
-                                    return self.full_query
-
-                                if not self.is_listening:
-                                    break 
+                            # 提交逻辑
+                            if self.has_started and self.full_query:
+                                if self.detect_end_phrase(text):
+                                    return await self.submit_query()
 
                         except sr.WaitTimeoutError:
-                            if self.has_started and self.full_query and self.unrecognized_count >= 2:
-                                await self.audio_queue.put(self.full_query)
-                                self.reset_state()
-                                return self.full_query
-                            if not self.is_listening:
-                                break
-                            
+                            if self.has_started and self.full_query:
+                                if time.time() - self.last_activity_time >= 2.0:
+                                    self.logger.info("[Voice] 静默超时提交")
+                                    return await self.submit_query()
+                        
+                        except sr.UnknownValueError:
+                            if self.has_started:
+                                self.unrecognized_count += 1
+                                if self.unrecognized_count >= 2:
+                                    self.logger.info("[Voice] 连续无法识别提交")
+                                    return await self.submit_query()
+                        
                         except sr.RequestError as e:
-                            self.logger.error(f"[Voice] 识别服务错误: {str(e)}")
-                            # 指数退避重试
-                            delay = min(2 ** retry_count, 30)  # 最大30秒
-                            await asyncio.sleep(delay)
-                            retry_count += 1
-                            # 检查网络连接
-                            try:
-                                # Test connection but don't return boolean values
-                                socket.create_connection(("8.8.8.8", 53), timeout=3)
-                                # Continue the loop instead of returning True
-                                continue
-                            except OSError:
-                                await self.audio_util.say_response("网络连接失败")
-                                self.stop()
-                                # Return empty string instead of False to maintain consistent return type
-                                return ""
-                            if not self.is_listening:
-                                break
-                            continue
+                            self.logger.error(f"[Voice] 识别服务请求失败: {e}")
+                            await asyncio.sleep(2)
+                            break
 
-            except OSError as e:
-                    self.logger.error(f"[Voice] 麦克风不可用: {str(e)}")
-                    retry_count += 1
-                    self.logger.info(f"[Voice] 尝试重启麦克风 ({retry_count}/{self.max_retries})")
-                    if mic:
-                        mic.__exit__(None, None, None)
-                        mic = None
-                    await asyncio.sleep(2)  # 等待后重试
-                    
-                    if retry_count >= self.max_retries:
-                        self.logger.error("[Voice] 麦克风重试次数耗尽，停止语音服务")
-                        self.stop()
-                        break
-                    if not self.is_listening:
-                        break
-                    
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
-                    self.logger.error(f"[Voice] 未预期的错误: {str(e)}")
-                    await asyncio.sleep(1)
+                self.logger.error(f"[Voice] 运行异常: {e}")
+                retry_count += 1
+                await asyncio.sleep(min(retry_count, 5))
+                if retry_count > self.max_retries:
+                    self.logger.error("[Voice] 重试次数过多，停止服务")
+                    self.stop()
                     break
-                
-            finally:
-                # 修复：添加对mic是否为None的检查，并使用更安全的方式关闭麦克风
-                if mic is not None:
-                    try:
-                        # 检查是否有__exit__方法
-                        if hasattr(mic, '__exit__'):
-                            mic.__exit__(None, None, None)
-                        # 检查是否有close方法
-                        elif hasattr(mic, 'close'):
-                            mic.close()
-                    except Exception as e:
-                        self.logger.error(f"[Voice] 关闭麦克风时出错: {str(e)}")
-                mic = None
-            
-            if not self.is_listening:
-                self.logger.info("[Voice] 退出语音服务")
-                break
+
+        self.logger.info("[Voice] 语音服务已完全停止")
+
+    def _recognize_whisper(self, audio: sr.AudioData) -> str:
+        from config import config
+        speech_cfg = config.get("SPEECH_RECOGNITION_CONFIG", {}) if isinstance(config, dict) else {}
+        model_name = str(speech_cfg.get("WHISPER_MODEL", "small")).strip() or "small"
+        device = str(speech_cfg.get("WHISPER_DEVICE", "cuda")).strip().lower() or "cuda"
+        compute_type = str(speech_cfg.get("WHISPER_COMPUTE_TYPE", "")).strip().lower()
+        download_root = str(speech_cfg.get("WHISPER_DOWNLOAD_ROOT", "")).strip()
+        if download_root:
+            os.makedirs(download_root, exist_ok=True)
+
+        try:
+            import numpy as np
+        except Exception as e:
+            raise sr.RequestError(f"numpy missing: {e}")
+
+        raw = audio.get_raw_data(convert_rate=16000, convert_width=2)
+        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+
+        with self._whisper_lock:
+            if self._whisper_model is None:
+                try:
+                    from faster_whisper import WhisperModel
+                except Exception as e:
+                    raise sr.RequestError(f"faster-whisper missing: {e}")
+
+                if not compute_type:
+                    compute_type = "float16" if device == "cuda" else "int8"
+                try:
+                    kwargs = {"device": device, "compute_type": compute_type}
+                    if download_root:
+                        kwargs["download_root"] = download_root
+                    self._whisper_model = WhisperModel(model_name, **kwargs)
+                except Exception as e:
+                    if device != "cpu":
+                        try:
+                            kwargs = {"device": "cpu", "compute_type": "int8"}
+                            if download_root:
+                                kwargs["download_root"] = download_root
+                            self._whisper_model = WhisperModel(model_name, **kwargs)
+                        except Exception as e2:
+                            raise sr.RequestError(
+                                f"whisper_local init failed: {e2}. If HuggingFace is unreachable, download the model in advance and set WHISPER_MODEL to a local folder, or set WHISPER_DOWNLOAD_ROOT to an existing cache directory."
+                            )
+                    else:
+                        raise sr.RequestError(
+                            f"whisper_local init failed: {e}. If HuggingFace is unreachable, download the model in advance and set WHISPER_MODEL to a local folder, or set WHISPER_DOWNLOAD_ROOT to an existing cache directory."
+                        )
+
+            segments, info = self._whisper_model.transcribe(samples, language="zh")
+            text = "".join(seg.text for seg in segments).strip()
+            if not text:
+                raise sr.UnknownValueError()
+            return text

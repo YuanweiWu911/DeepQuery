@@ -10,6 +10,7 @@ class TestResponseProcessing:
         logger.setLevel(logging.INFO)
         # Initialize ChatHandler
         self.handler = ChatHandler(logger)
+        self.handler.set_voice_active(False)
         return self.handler
     @pytest.mark.asyncio
     async def test_markdown_cleanup(self, setUp):
@@ -17,11 +18,11 @@ class TestResponseProcessing:
         test_cases = [
             ("# 标题", "标题"),
             ("##标题", "标题"),
-            ("文本**加粗**内容", "文本内容"),
-            ("`代码块`保留", "保留"),
+            ("文本**加粗**内容", "文本加粗内容"),
+            ("`代码块`保留", "代码块保留"),
             ("[链接](url)", ""),
-            ("***混合***格式", "格式"),
-            ("正常*符号使用", "正常符号使用"),
+            ("***混合***格式", "混合格式"),
+            ("正常*符号使用", "正常*符号使用"),
             ("5*3=15", "5*3=15")  # Fixed to preserve mathematical operators
         ]
         

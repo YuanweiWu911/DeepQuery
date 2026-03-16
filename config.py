@@ -15,10 +15,10 @@ def load_config():
         # 返回默认配置
         return {
             "SSH_CONFIG": {
-                "HOST": os.getenv('SSH_HOST', '192.168.182.124'),
+                "HOST": os.getenv('SSH_HOST', ''),
                 "PORT": int(os.getenv('SSH_PORT', 22)),
-                "USER": os.getenv('SSH_USER', 'ywwu'),
-                "PASSWORD": os.getenv('SSH_PASSWORD', 'wjswyw119')
+                "USER": os.getenv('SSH_USER', ''),
+                "PASSWORD": os.getenv('SSH_PASSWORD', '')
             },
             "WEBSOCKET_PORT": 8765,
             "HTTP_PORT": 8000,
@@ -31,7 +31,16 @@ def load_config():
                 {"value": "deepseek-r1:671b", "name": "deepseek-r1:671b", "selected": False}
             ],
             "WEB_SEARCH_CONFIG": {
-                "SERPER_API_KEY": os.getenv('SERPER_API_KEY', 'ebba2f3fd617ab2108b7b66cf41cf5b3a717815a')
+                "SERPER_API_KEY": os.getenv('SERPER_API_KEY', '')
+            },
+            "SPEECH_RECOGNITION_CONFIG": {
+                "PROVIDER": os.getenv("SPEECH_PROVIDER", "google"),
+                "BAIDU_APP_KEY": os.getenv("BAIDU_APP_KEY", ""),
+                "BAIDU_SECRET_KEY": os.getenv("BAIDU_SECRET_KEY", ""),
+                "WHISPER_MODEL": os.getenv("WHISPER_MODEL", "small"),
+                "WHISPER_DEVICE": os.getenv("WHISPER_DEVICE", "cuda"),
+                "WHISPER_COMPUTE_TYPE": os.getenv("WHISPER_COMPUTE_TYPE", ""),
+                "WHISPER_DOWNLOAD_ROOT": os.getenv("WHISPER_DOWNLOAD_ROOT", "")
             }
         }
 
@@ -44,6 +53,7 @@ WEBSOCKET_PORT = config["WEBSOCKET_PORT"]
 HTTP_PORT = config["HTTP_PORT"]
 MODELS = config["MODELS"]
 WEB_SEARCH_CONFIG = config["WEB_SEARCH_CONFIG"]
+SPEECH_RECOGNITION_CONFIG = config.get("SPEECH_RECOGNITION_CONFIG", {"PROVIDER": "google"})
 
 # 保存配置到文件
 def save_config():
