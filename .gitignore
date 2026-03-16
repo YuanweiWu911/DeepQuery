@@ -1,3 +1,5 @@
+whisper_models/
+.gitignore
 __pycache__/
 services/__pycache__/
 test/__pycache__/
@@ -12,12 +14,12 @@ utils/__pycache__/
 venv/
 env/
 .env
-
+.vscode/
+.vscode/settings.json
+.trae/
 build/
 dist/
 *.spec
-whisper_models/
 config.json
-
 .DS_Store
 Thumbs.db
