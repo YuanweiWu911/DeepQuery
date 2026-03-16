@@ -116,8 +116,19 @@
             <div class="config-section">
                 <h4>Web搜索配置</h4>
                 <div class="config-item">
+                    <label for="web-search-provider">提供方:</label>
+                    <select id="web-search-provider" name="web-search-provider">
+                        <option value="serper">Serper</option>
+                        <option value="bocha">BochaAI</option>
+                    </select>
+                </div>
+                <div class="config-item">
                     <label for="serper-api-key">Serper API密钥:</label>
                     <input type="password" id="serper-api-key" name="serper-api-key">
+                </div>
+                <div class="config-item">
+                    <label for="bocha-api-key">Bocha API密钥:</label>
+                    <input type="password" id="bocha-api-key" name="bocha-api-key">
                 </div>
             </div>
             <div class="config-section">
@@ -921,8 +932,15 @@ async function openConfigDialog() {
         
         document.getElementById('websocket-port').value = config.WEBSOCKET_PORT;
         document.getElementById('http-port').value = config.HTTP_PORT;
-        
+       
+        const webSearchProviderEl = document.getElementById('web-search-provider');
+        if (webSearchProviderEl) {
+            const provider = (config.WEB_SEARCH_CONFIG && config.WEB_SEARCH_CONFIG.PROVIDER) ? config.WEB_SEARCH_CONFIG.PROVIDER : 'serper';
+            webSearchProviderEl.value = provider;
+        }
         document.getElementById('serper-api-key').value = '';
+        const bochaApiKeyEl = document.getElementById('bocha-api-key');
+        if (bochaApiKeyEl) bochaApiKeyEl.value = '';
 
         const providerEl = document.getElementById('speech-provider');
         if (providerEl) {
@@ -967,7 +985,9 @@ async function saveConfig() {
             WEBSOCKET_PORT: parseInt(document.getElementById('websocket-port').value),
             HTTP_PORT: parseInt(document.getElementById('http-port').value),
             WEB_SEARCH_CONFIG: {
-                SERPER_API_KEY: document.getElementById('serper-api-key').value
+                PROVIDER: document.getElementById('web-search-provider').value,
+                SERPER_API_KEY: document.getElementById('serper-api-key').value,
+                BOCHA_API_KEY: document.getElementById('bocha-api-key').value
             },
             SPEECH_RECOGNITION_CONFIG: {
                 PROVIDER: document.getElementById('speech-provider').value,

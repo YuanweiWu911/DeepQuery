@@ -177,6 +177,7 @@ async def get_config(request: Request):
         "WEB_SEARCH_CONFIG": {
             **config.get("WEB_SEARCH_CONFIG", {}),
             "SERPER_API_KEY": "",
+            "BOCHA_API_KEY": "",
         },
         "SPEECH_RECOGNITION_CONFIG": {
             **config.get("SPEECH_RECOGNITION_CONFIG", {}),
@@ -217,10 +218,14 @@ async def save_config(request: Request):
             web_in = new_config["WEB_SEARCH_CONFIG"]
             web_existing = config.get("WEB_SEARCH_CONFIG", {})
             serper_key = web_in.get("SERPER_API_KEY")
+            bocha_key = web_in.get("BOCHA_API_KEY")
             web_merged = {**web_existing, **web_in}
             if serper_key is None or str(serper_key).strip() == "":
                 if "SERPER_API_KEY" in web_existing:
                     web_merged["SERPER_API_KEY"] = web_existing.get("SERPER_API_KEY")
+            if bocha_key is None or str(bocha_key).strip() == "":
+                if "BOCHA_API_KEY" in web_existing:
+                    web_merged["BOCHA_API_KEY"] = web_existing.get("BOCHA_API_KEY")
             config["WEB_SEARCH_CONFIG"] = {
                 **web_merged,
             }

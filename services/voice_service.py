@@ -210,7 +210,6 @@ class VoiceRecognitionService:
         beam_size_str = str(speech_cfg.get("WHISPER_BEAM_SIZE", "")).strip()
         vad_filter_str = str(speech_cfg.get("WHISPER_VAD_FILTER", "")).strip().lower()
         vad_min_silence_ms_str = str(speech_cfg.get("WHISPER_VAD_MIN_SILENCE_MS", "")).strip()
-        local_only_str = str(speech_cfg.get("WHISPER_LOCAL_ONLY", "")).strip().lower()
         if download_root:
             os.makedirs(download_root, exist_ok=True)
 
@@ -235,32 +234,14 @@ class VoiceRecognitionService:
                     kwargs = {"device": device, "compute_type": compute_type}
                     if download_root:
                         kwargs["download_root"] = download_root
-                    if local_only_str in ("1", "true", "yes", "on"):
-                        kwargs["local_files_only"] = True
-                    try:
-                        self._whisper_model = WhisperModel(model_name, **kwargs)
-                    except TypeError as te:
-                        if "local_files_only" in kwargs:
-                            kwargs.pop("local_files_only", None)
-                            self._whisper_model = WhisperModel(model_name, **kwargs)
-                        else:
-                            raise te
+                    self._whisper_model = WhisperModel(model_name, **kwargs)
                 except Exception as e:
                     if device != "cpu":
                         try:
                             kwargs = {"device": "cpu", "compute_type": "int8"}
                             if download_root:
                                 kwargs["download_root"] = download_root
-                            if local_only_str in ("1", "true", "yes", "on"):
-                                kwargs["local_files_only"] = True
-                            try:
-                                self._whisper_model = WhisperModel(model_name, **kwargs)
-                            except TypeError as te:
-                                if "local_files_only" in kwargs:
-                                    kwargs.pop("local_files_only", None)
-                                    self._whisper_model = WhisperModel(model_name, **kwargs)
-                                else:
-                                    raise te
+                            self._whisper_model = WhisperModel(model_name, **kwargs)
                         except Exception as e2:
                             raise sr.RequestError(
                                 f"whisper_local init failed: {e2}. If HuggingFace is unreachable, download the model in advance and set WHISPER_MODEL to a local folder, or set WHISPER_DOWNLOAD_ROOT to an existing cache directory."
