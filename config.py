@@ -40,7 +40,12 @@ def load_config():
                 "WHISPER_MODEL": os.getenv("WHISPER_MODEL", "small"),
                 "WHISPER_DEVICE": os.getenv("WHISPER_DEVICE", "cuda"),
                 "WHISPER_COMPUTE_TYPE": os.getenv("WHISPER_COMPUTE_TYPE", ""),
-                "WHISPER_DOWNLOAD_ROOT": os.getenv("WHISPER_DOWNLOAD_ROOT", "")
+                "WHISPER_DOWNLOAD_ROOT": os.getenv("WHISPER_DOWNLOAD_ROOT", ""),
+                "WHISPER_LANGUAGE": os.getenv("WHISPER_LANGUAGE", "zh"),
+                "WHISPER_BEAM_SIZE": os.getenv("WHISPER_BEAM_SIZE", ""),
+                "WHISPER_VAD_FILTER": os.getenv("WHISPER_VAD_FILTER", ""),
+                "WHISPER_VAD_MIN_SILENCE_MS": os.getenv("WHISPER_VAD_MIN_SILENCE_MS", ""),
+                "WHISPER_LOCAL_ONLY": os.getenv("WHISPER_LOCAL_ONLY", "1")
             }
         }
 
