@@ -1,4 +1,4 @@
 {
     "taipyStudio.gUI.elementsFilePaths": [],
-    "python.defaultInterpreterPath": "${workspaceFolder}/venv/Scripts/python.exe"
+    "python.defaultInterpreterPath": "./venv/Scripts/python.exe"
 }
