@@ -10,5 +10,6 @@ build_deepquery/
 dist/
 venv/
 whisper_models/
+release/
 *.spec
 config.json
